@@ -13,9 +13,9 @@ import (
 var noDeadline = time.Time{}
 
 var (
-	errTimeout           error = &timeoutError{}
-	errMissingAddress          = errors.New("missing addr")
-	errNoSuitableAddress       = errors.New("no suitable addr found")
+	errTimeout           = error(&timeoutError{})
+	errMissingAddress    = errors.New("missing address")
+	errNoSuitableAddress = errors.New("no suitable address found")
 )
 
 // ResolveTCPAddrs parses addr as a TCP address of the form "host:port"
@@ -123,40 +123,40 @@ func resolveInternetAddrs(nett, addr string, deadline time.Time) (interface{}, e
 	default:
 		return nil, net.UnknownNetworkError(nett)
 	}
-	appendAddr := func(addrs interface{}, ip net.IP) interface{} {
+	ctor := func(ips ...net.IP) interface{} {
 		switch nett {
 		case "tcp", "tcp4", "tcp6":
-			a := &net.TCPAddr{IP: ip, Port: portnum, Zone: zone}
-			if addrs == nil {
-				return []*net.TCPAddr{a}
+			addrs := make([]*net.TCPAddr, len(ips))
+			for i, ip := range ips {
+				addrs[i] = &net.TCPAddr{IP: ip, Port: portnum, Zone: zone}
 			}
-			return append(addrs.([]*net.TCPAddr), a)
+			return addrs
 		case "udp", "udp4", "udp6":
-			a := &net.UDPAddr{IP: ip, Port: portnum, Zone: zone}
-			if addrs == nil {
-				return []*net.UDPAddr{a}
+			addrs := make([]*net.UDPAddr, len(ips))
+			for i, ip := range ips {
+				addrs[i] = &net.UDPAddr{IP: ip, Port: portnum, Zone: zone}
 			}
-			return append(addrs.([]*net.UDPAddr), a)
+			return addrs
 		case "ip", "ip4", "ip6":
-			a := &net.IPAddr{IP: ip, Zone: zone}
-			if addrs == nil {
-				return []*net.IPAddr{a}
+			addrs := make([]*net.IPAddr, len(ips))
+			for i, ip := range ips {
+				addrs[i] = &net.IPAddr{IP: ip, Zone: zone}
 			}
-			return append(addrs.([]*net.IPAddr), a)
+			return addrs
 		default:
 			panic("unexpected network: " + nett)
 		}
 	}
 	if host == "" {
-		return appendAddr(nil, nil), nil
+		return ctor(nil), nil
 	}
 	// Try as a literal IP address.
 	var ip net.IP
 	if ip = parseIPv4(host); ip != nil {
-		return appendAddr(nil, ip), nil
+		return ctor(ip), nil
 	}
 	if ip, zone = parseIPv6(host, true); ip != nil {
-		return appendAddr(nil, ip), nil
+		return ctor(ip), nil
 	}
 	// Try as a DNS name.
 	host, zone = splitHostZone(host)
@@ -171,7 +171,13 @@ func resolveInternetAddrs(nett, addr string, deadline time.Time) (interface{}, e
 	if nett != "" && nett[len(nett)-1] == '6' || zone != "" {
 		filter = ipv6only
 	}
-	return filterAddrs(filter, ips, appendAddr)
+	ips = filterIPs(filter, ips)
+	if len(ips) == 0 {
+		return nil, errNoSuitableAddress
+	}
+	// TODO(abursavich): Sort addresses? Package net prefers
+	// IPv4 to IPv6 but uses at maximum one of each kind.
+	return ctor(ips...), nil
 }
 
 func lookupIPDeadline(host string, deadline time.Time) ([]net.IP, error) {
@@ -209,19 +215,18 @@ func lookupIPDeadline(host string, deadline time.Time) ([]net.IP, error) {
 	}
 }
 
-func filterAddrs(filter func(net.IP) net.IP, ips []net.IP, appendAddr func(interface{}, net.IP) interface{}) (interface{}, error) {
-	var addrs interface{}
+// filterIPs returns the non-nil results of filter applied to ips.
+// It is processed in-place: the contents of ips is not preserved
+// and the result is sliced from its backing array.
+func filterIPs(filter func(net.IP) net.IP, ips []net.IP) []net.IP {
+	n := 0
 	for i := range ips {
 		if ip := filter(ips[i]); ip != nil {
-			addrs = appendAddr(addrs, ip)
+			ips[n] = ip
+			n++
 		}
 	}
-	if addrs == nil {
-		return nil, errNoSuitableAddress
-	}
-	// TODO(abursavich): Sort addresses? Package net prefers
-	// IPv4 to IPv6 but uses at maximum one of each kind.
-	return addrs, nil
+	return ips[:n]
 }
 
 // ipv4only returns IPv4 addresses that we can use with the kernel's
