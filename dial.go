@@ -5,6 +5,7 @@
 package nett
 
 import (
+	"math/rand"
 	"net"
 	"time"
 )
@@ -181,9 +182,7 @@ func DialTimeout(network, address string, timeout time.Duration) (net.Conn, erro
 // AddrFilter selects addresses from an AddrList.
 type AddrFilter func(list AddrList) AddrList
 
-// var DefaultAddrFilter = GreedyAddrFilter(2)
-
-// DefaultAddrFilter will select the first IPv4 address
+// DefaultAddrFilter selects the first IPv4 address
 // and the first IPv6 address in list.
 func DefaultAddrFilter(list AddrList) AddrList {
 	listLen := list.Len()
@@ -207,7 +206,7 @@ func DefaultAddrFilter(list AddrList) AddrList {
 	return a
 }
 
-// SingleAddrFilter will select the first address in list
+// SingleAddrFilter selects the first address in list
 // preferring IPv4 over IPv6.
 func SingleAddrFilter(list AddrList) AddrList {
 	listLen := list.Len()
@@ -225,13 +224,37 @@ func SingleAddrFilter(list AddrList) AddrList {
 	return list.Slice(ipv6, ipv6+1)
 }
 
-// GreedyAddrFilter returns an AddrFilter that will selecg up to
-// max addresses. It will try to split the results evenly between
-// availabe IPv4 and IPv6 addresses. If one type of address
-// doesn't exist in sufficient quantity to consume half of max,
-// the other type will be allowed to fill any extra space in the
-// result. Addresses toward the front of the list are preferred.
-func GreedyAddrFilter(max int) AddrFilter {
+// IPv4AddrFilter selects all IPv4 addresses in list.
+func IPv4AddrFilter(list AddrList) AddrList {
+	a := list.New()
+	listLen := list.Len()
+	for i := 0; i < listLen; i++ {
+		if len(list.IP(i)) == net.IPv4len {
+			a.Append(list, i)
+		}
+	}
+	return a
+}
+
+// IPv6AddrFilter selects all IPv6 addresses in list.
+func IPv6AddrFilter(list AddrList) AddrList {
+	a := list.New()
+	listLen := list.Len()
+	for i := 0; i < listLen; i++ {
+		if len(list.IP(i)) == net.IPv6len {
+			a.Append(list, i)
+		}
+	}
+	return a
+}
+
+// MaxAddrFilter returns an AddrFilter that selects up to max
+// addresses. It will split the results evenly between availabe
+// IPv4 and IPv6 addresses. If one type of address doesn't exist
+// in sufficient quantity to consume its share, the other type
+// will be allowed to fill any extra space in the result.
+// Addresses toward the front of the list are preferred.
+func MaxAddrFilter(max int) AddrFilter {
 	return func(list AddrList) AddrList {
 		listLen := list.Len()
 		if listLen <= max {
@@ -264,6 +287,48 @@ func GreedyAddrFilter(max int) AddrFilter {
 			}
 		}
 		return a
+	}
+}
+
+// ReverseAddrFilter selects all addresses in list
+// in reverse order.
+func ReverseAddrFilter(list AddrList) AddrList {
+	listLen := list.Len()
+	if listLen <= 1 {
+		return list
+	}
+	a := list.New()
+	for i := listLen - 1; i >= 0; i-- {
+		a.Append(list, i)
+	}
+	return a
+}
+
+// ShuffleAddrFilter selects all addresses in list
+// in random order.
+func ShuffleAddrFilter(list AddrList) AddrList {
+	listLen := list.Len()
+	if listLen <= 1 {
+		return list
+	}
+	a := list.New()
+	for _, i := range rand.Perm(listLen) {
+		a.Append(list, i)
+	}
+	return a
+}
+
+// ComposeAddrFilters returns an AddrFilter that applies
+// filters in sequence.
+//
+// Example:
+// 	ComposeAddrFilters(ShuffleAddrFilter, DefaultAddrFilter) // selects one random IPv4 and IPv6 address
+func ComposeAddrFilters(filters ...AddrFilter) AddrFilter {
+	return func(list AddrList) AddrList {
+		for _, filter := range filters {
+			list = filter(list)
+		}
+		return list
 	}
 }
 
