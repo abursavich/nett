@@ -33,7 +33,7 @@ func ResolveTCPAddrs(nett, addr string) ([]*net.TCPAddr, error) {
 	if err != nil {
 		return nil, err
 	}
-	return iaddrs.([]*net.TCPAddr), nil
+	return *iaddrs.(*tcpList), nil
 }
 
 // ResolveUDPAddrs parses addr as a UDP address of the form "host:port"
@@ -51,7 +51,7 @@ func ResolveUDPAddrs(nett, addr string) ([]*net.UDPAddr, error) {
 	if err != nil {
 		return nil, err
 	}
-	return iaddrs.([]*net.UDPAddr), nil
+	return *iaddrs.(*udpList), nil
 }
 
 // ResolveIPAddrs parses addr as an IP address of the form "host" or
@@ -71,7 +71,7 @@ func ResolveIPAddrs(nett, addr string) ([]*net.IPAddr, error) {
 	if err != nil {
 		return nil, err
 	}
-	return iaddrs.([]*net.IPAddr), nil
+	return *iaddrs.(*ipList), nil
 }
 
 // ResolveUnixAddrs parses addr as a Unix domain socket address.
@@ -87,7 +87,7 @@ func ResolveUnixAddrs(nett, addr string) ([]*net.UnixAddr, error) {
 	}
 }
 
-func resolveAddrs(nett, addr string, deadline time.Time) (interface{}, error) {
+func resolveAddrs(nett, addr string, deadline time.Time) (AddrList, error) {
 	nettt, err := parseNetwork(nett)
 	if err != nil {
 		return nil, err
@@ -97,12 +97,13 @@ func resolveAddrs(nett, addr string, deadline time.Time) (interface{}, error) {
 	}
 	switch nettt {
 	case "unix", "unixgram", "unixpacket":
-		return []*net.UnixAddr{&net.UnixAddr{Name: addr, Net: nett}}, nil
+		addrs := unixList{&net.UnixAddr{Name: addr, Net: nett}}
+		return &addrs, nil
 	}
 	return resolveInternetAddrs(nettt, addr, deadline)
 }
 
-func resolveInternetAddrs(nett, addr string, deadline time.Time) (interface{}, error) {
+func resolveInternetAddrs(nett, addr string, deadline time.Time) (AddrList, error) {
 	var (
 		err              error
 		host, port, zone string
@@ -123,26 +124,26 @@ func resolveInternetAddrs(nett, addr string, deadline time.Time) (interface{}, e
 	default:
 		return nil, net.UnknownNetworkError(nett)
 	}
-	ctor := func(ips ...net.IP) interface{} {
+	ctor := func(ips ...net.IP) AddrList {
 		switch nett {
 		case "tcp", "tcp4", "tcp6":
-			addrs := make([]*net.TCPAddr, len(ips))
+			addrs := make(tcpList, len(ips))
 			for i, ip := range ips {
 				addrs[i] = &net.TCPAddr{IP: ip, Port: portnum, Zone: zone}
 			}
-			return addrs
+			return &addrs
 		case "udp", "udp4", "udp6":
-			addrs := make([]*net.UDPAddr, len(ips))
+			addrs := make(udpList, len(ips))
 			for i, ip := range ips {
 				addrs[i] = &net.UDPAddr{IP: ip, Port: portnum, Zone: zone}
 			}
-			return addrs
+			return &addrs
 		case "ip", "ip4", "ip6":
-			addrs := make([]*net.IPAddr, len(ips))
+			addrs := make(ipList, len(ips))
 			for i, ip := range ips {
 				addrs[i] = &net.IPAddr{IP: ip, Zone: zone}
 			}
-			return addrs
+			return &addrs
 		default:
 			panic("unexpected network: " + nett)
 		}
@@ -265,8 +266,7 @@ func parseNetwork(nett string) (string, error) {
 	nettt := nett[:i]
 	switch nettt {
 	case "ip", "ip4", "ip6":
-		// TODO(abursavich): Come back to parsing
-		// the proto if/when it's time to dial IP.
+		// don't bother validating the proto
 		return nettt, nil
 	}
 	return "", net.UnknownNetworkError(nett)
