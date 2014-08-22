@@ -7,145 +7,168 @@ package nett
 import (
 	"errors"
 	"net"
-	"time"
 )
-
-var noDeadline = time.Time{}
 
 var (
 	errTimeout           = error(&timeoutError{})
 	errMissingAddress    = errors.New("missing address")
 	errNoSuitableAddress = errors.New("no suitable address found")
+
+	defaultResolver = &DefaultResolver{}
 )
 
-// ResolveTCPAddrs parses addr as a TCP address of the form "host:port"
+type Resolver interface {
+	ResolveAddrs(network, address string) (Addrs, error)
+}
+
+type DefaultResolver struct {
+	Filter AddrsFilter
+}
+
+func (r *DefaultResolver) ResolveAddrs(network, address string) (Addrs, error) {
+	addrs, err := resolveAddrs(network, address)
+	if err != nil {
+		return nil, err
+	}
+	filter := r.Filter
+	if filter == nil {
+		filter = DefaultAddrsFilter
+	}
+	addrs = filter(addrs)
+	if addrs.Len() == 0 {
+		return nil, errNoSuitableAddress
+	}
+	return addrs, nil
+}
+
+// ResolveTCPAddrs parses address as a TCP address of the form "host:port"
 // or "[ipv6-host%zone]:port" and resolves a pair of domain name and port
-// name on the network nett, which must be "tcp", "tcp4" or "tcp6".
+// name on the network network, which must be "tcp", "tcp4" or "tcp6".
 // A literal address or host name for IPv6 must be enclosed in square
 // brackets, as in "[::1]:80", "[ipv6-host]:http" or "[ipv6-host%zone]:80".
-func ResolveTCPAddrs(nett, addr string) ([]*net.TCPAddr, error) {
-	switch nett {
+func ResolveTCPAddrs(network, address string) ([]*net.TCPAddr, error) {
+	switch network {
 	case "tcp", "tcp4", "tcp6":
 	default:
-		return nil, net.UnknownNetworkError(nett)
+		return nil, net.UnknownNetworkError(network)
 	}
-	iaddrs, err := resolveAddrs(nett, addr, noDeadline)
+	iaddrs, err := resolveAddrs(network, address)
 	if err != nil {
 		return nil, err
 	}
-	return *iaddrs.(*tcpList), nil
+	return iaddrs.(tcpAddrs), nil
 }
 
-// ResolveUDPAddrs parses addr as a UDP address of the form "host:port"
+// ResolveUDPAddrs parses address as a UDP address of the form "host:port"
 // or "[ipv6-host%zone]:port" and resolves a pair of domain name and port
-// name on the network nett, which must be "upd", "upd4" or "udp6".
+// name on the network, which must be "upd", "upd4" or "udp6".
 // A literal address or host name for IPv6 must be enclosed in square
 // brackets, as in "[::1]:80", "[ipv6-host]:http" or "[ipv6-host%zone]:80".
-func ResolveUDPAddrs(nett, addr string) ([]*net.UDPAddr, error) {
-	switch nett {
+func ResolveUDPAddrs(network, address string) ([]*net.UDPAddr, error) {
+	switch network {
 	case "udp", "udp4", "udp6":
 	default:
-		return nil, net.UnknownNetworkError(nett)
+		return nil, net.UnknownNetworkError(network)
 	}
-	iaddrs, err := resolveAddrs(nett, addr, noDeadline)
+	iaddrs, err := resolveAddrs(network, address)
 	if err != nil {
 		return nil, err
 	}
-	return *iaddrs.(*udpList), nil
+	return iaddrs.(udpAddrs), nil
 }
 
-// ResolveIPAddrs parses addr as an IP address of the form "host" or
-// "ipv6-host%zone" and resolves the domain name on the network nett,
+// ResolveIPAddrs parses address as an IP address of the form "host" or
+// "ipv6-host%zone" and resolves the domain name on the network,
 // which must be "ip", "ip4" or "ip6".
-func ResolveIPAddrs(nett, addr string) ([]*net.IPAddr, error) {
-	nettt, err := parseNetwork(nett)
+func ResolveIPAddrs(network, address string) ([]*net.IPAddr, error) {
+	nettt, err := parseNetwork(network)
 	if err != nil {
 		return nil, err
 	}
 	switch nettt {
 	case "ip", "ip4", "ip6":
 	default:
-		return nil, net.UnknownNetworkError(nett)
+		return nil, net.UnknownNetworkError(network)
 	}
-	iaddrs, err := resolveAddrs(nettt, addr, noDeadline)
+	iaddrs, err := resolveAddrs(nettt, address)
 	if err != nil {
 		return nil, err
 	}
-	return *iaddrs.(*ipList), nil
+	return iaddrs.(ipAddrs), nil
 }
 
-// ResolveUnixAddrs parses addr as a Unix domain socket address.
-// The string nett gives the network name "unix", "unixgram" or
+// ResolveUnixAddrs parses address as a Unix domain socket address.
+// The string network gives the network name "unix", "unixgram" or
 // "unixpacket".
-func ResolveUnixAddrs(nett, addr string) ([]*net.UnixAddr, error) {
+func ResolveUnixAddrs(network, address string) ([]*net.UnixAddr, error) {
 	// this function is really stupid but included for completeness/symmetry
-	switch nett {
+	switch network {
 	case "unix", "unixgram", "unixpacket":
-		return []*net.UnixAddr{&net.UnixAddr{Name: addr, Net: nett}}, nil
+		return []*net.UnixAddr{&net.UnixAddr{Name: address, Net: network}}, nil
 	default:
-		return nil, net.UnknownNetworkError(nett)
+		return nil, net.UnknownNetworkError(network)
 	}
 }
 
-func resolveAddrs(nett, addr string, deadline time.Time) (AddrList, error) {
-	nettt, err := parseNetwork(nett)
+func resolveAddrs(network, address string) (Addrs, error) {
+	nettt, err := parseNetwork(network)
 	if err != nil {
 		return nil, err
 	}
-	if addr == "" {
+	if address == "" {
 		return nil, errMissingAddress
 	}
 	switch nettt {
 	case "unix", "unixgram", "unixpacket":
-		addrs := unixList{&net.UnixAddr{Name: addr, Net: nett}}
+		addrs := unixAddrs{&net.UnixAddr{Name: address, Net: network}}
 		return &addrs, nil
 	}
-	return resolveInternetAddrs(nettt, addr, deadline)
+	return resolveInternetAddrs(nettt, address)
 }
 
-func resolveInternetAddrs(nett, addr string, deadline time.Time) (AddrList, error) {
+func resolveInternetAddrs(network, address string) (Addrs, error) {
 	var (
 		err              error
 		host, port, zone string
 		portnum          int
 	)
-	switch nett {
+	switch network {
 	case "tcp", "tcp4", "tcp6", "udp", "udp4", "udp6":
-		if addr != "" {
-			if host, port, err = net.SplitHostPort(addr); err != nil {
+		if address != "" {
+			if host, port, err = net.SplitHostPort(address); err != nil {
 				return nil, err
 			}
-			if portnum, err = parsePort(nett, port); err != nil {
+			if portnum, err = parsePort(network, port); err != nil {
 				return nil, err
 			}
 		}
 	case "ip", "ip4", "ip6":
-		host = addr
+		host = address
 	default:
-		return nil, net.UnknownNetworkError(nett)
+		return nil, net.UnknownNetworkError(network)
 	}
-	ctor := func(ips ...net.IP) AddrList {
-		switch nett {
+	ctor := func(ips ...net.IP) Addrs {
+		switch network {
 		case "tcp", "tcp4", "tcp6":
-			addrs := make(tcpList, len(ips))
+			addrs := make(tcpAddrs, len(ips))
 			for i, ip := range ips {
 				addrs[i] = &net.TCPAddr{IP: ip, Port: portnum, Zone: zone}
 			}
-			return &addrs
+			return addrs
 		case "udp", "udp4", "udp6":
-			addrs := make(udpList, len(ips))
+			addrs := make(udpAddrs, len(ips))
 			for i, ip := range ips {
 				addrs[i] = &net.UDPAddr{IP: ip, Port: portnum, Zone: zone}
 			}
-			return &addrs
+			return addrs
 		case "ip", "ip4", "ip6":
-			addrs := make(ipList, len(ips))
+			addrs := make(ipAddrs, len(ips))
 			for i, ip := range ips {
 				addrs[i] = &net.IPAddr{IP: ip, Zone: zone}
 			}
-			return &addrs
+			return addrs
 		default:
-			panic("unexpected network: " + nett)
+			panic("unexpected network: " + network)
 		}
 	}
 	if host == "" {
@@ -161,15 +184,15 @@ func resolveInternetAddrs(nett, addr string, deadline time.Time) (AddrList, erro
 	}
 	// Try as a DNS name.
 	host, zone = splitHostZone(host)
-	ips, err := lookupIPDeadline(host, deadline)
+	ips, err := net.LookupIP(host)
 	if err != nil {
 		return nil, err
 	}
 	filter := SupportedIP
-	if nett != "" && nett[len(nett)-1] == '4' {
+	if network != "" && network[len(network)-1] == '4' {
 		filter = ipv4only
 	}
-	if nett != "" && nett[len(nett)-1] == '6' || zone != "" {
+	if network != "" && network[len(network)-1] == '6' || zone != "" {
 		filter = ipv6only
 	}
 	ips = filterIPs(filter, ips)
@@ -179,41 +202,6 @@ func resolveInternetAddrs(nett, addr string, deadline time.Time) (AddrList, erro
 	// TODO(abursavich): Sort addresses? Package net prefers
 	// IPv4 to IPv6 but uses at maximum one of each kind.
 	return ctor(ips...), nil
-}
-
-func lookupIPDeadline(host string, deadline time.Time) ([]net.IP, error) {
-	if deadline.IsZero() {
-		return net.LookupIP(host)
-	}
-
-	// TODO(bradfitz): consider pushing the deadline down into the
-	// name resolution functions. But that involves fixing it for
-	// the native Go resolver, cgo, Windows, etc.
-	//
-	// In the meantime, just use a goroutine. Most users affected
-	// by http://golang.org/issue/2631 are due to TCP connections
-	// to unresponsive hosts, not DNS.
-	timeout := deadline.Sub(time.Now())
-	if timeout <= 0 {
-		return nil, errTimeout
-	}
-	t := time.NewTimer(timeout)
-	defer t.Stop()
-	type res struct {
-		ips []net.IP
-		err error
-	}
-	resc := make(chan res, 1)
-	go func() {
-		ips, err := net.LookupIP(host)
-		resc <- res{ips, err}
-	}()
-	select {
-	case <-t.C:
-		return nil, errTimeout
-	case r := <-resc:
-		return r.ips, r.err
-	}
 }
 
 // filterIPs returns the non-nil results of filter applied to ips.
@@ -250,35 +238,35 @@ func ipv6only(ip net.IP) net.IP {
 	return nil
 }
 
-func parseNetwork(nett string) (string, error) {
-	i := last(nett, ':')
+func parseNetwork(network string) (string, error) {
+	i := last(network, ':')
 	if i < 0 { // no colon
-		switch nett {
+		switch network {
 		case "tcp", "tcp4", "tcp6":
 		case "udp", "udp4", "udp6":
 		case "ip", "ip4", "ip6":
 		case "unix", "unixgram", "unixpacket":
 		default:
-			return "", net.UnknownNetworkError(nett)
+			return "", net.UnknownNetworkError(network)
 		}
-		return nett, nil
+		return network, nil
 	}
-	nettt := nett[:i]
+	nettt := network[:i]
 	switch nettt {
 	case "ip", "ip4", "ip6":
 		// don't bother validating the proto
 		return nettt, nil
 	}
-	return "", net.UnknownNetworkError(nett)
+	return "", net.UnknownNetworkError(network)
 }
 
 // parsePort parses port as a network service port number for both
 // TCP and UDP.
-func parsePort(nett, port string) (int, error) {
+func parsePort(network, port string) (int, error) {
 	p, i, ok := dtoi(port, 0)
 	if !ok || i != len(port) {
 		var err error
-		p, err = net.LookupPort(nett, port)
+		p, err = net.LookupPort(network, port)
 		if err != nil {
 			return 0, err
 		}
