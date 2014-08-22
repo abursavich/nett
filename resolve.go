@@ -122,7 +122,7 @@ func resolveAddrs(network, address string, filter AddrsFilter) (Addrs, error) {
 	if filter != nil {
 		addrs = filter(addrs)
 	}
-	if addrs.Len() == 0 {
+	if addrs == nil || addrs.Len() == 0 {
 		return nil, errNoSuitableAddress
 	}
 	return addrs, nil
