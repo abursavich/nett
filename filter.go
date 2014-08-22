@@ -96,6 +96,11 @@ func DefaultAddrsFilter(list Addrs) Addrs {
 	return list.Slice(ipv6, ipv6+1)
 }
 
+// NoAddrsFilter selects all addresses in the list.
+func NoAddrsFilter(list Addrs) Addrs {
+	return list
+}
+
 // FirstAddrsFilter selects the first address in list.
 func FirstAddrsFilter(list Addrs) Addrs {
 	listLen := list.Len()
@@ -257,7 +262,7 @@ func ShuffleAddrsFilter(list Addrs) Addrs {
 //
 // Example:
 //	// selects one random IPv4 and IPv6 address
-//	ComposeAddrsFilters(ShuffleAddrsFilter, DefaultAddrsFilter)
+//	ComposeAddrsFilters(ShuffleAddrsFilter, FirstEachAddrsFilter)
 //	// equivalent to FirstIPv4AddrsFilter
 //	ComposeAddrsFilters(IPv4AddrsFilter, FirstAddrsFilter)
 func ComposeAddrsFilters(filters ...AddrsFilter) AddrsFilter {

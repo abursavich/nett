@@ -22,28 +22,24 @@ type Resolver interface {
 }
 
 type DefaultResolver struct {
+	// Filter selects addresses from those available after
+	// resolving a host. It is not applied to Unix addresses.
+	//
+	// If nil, DefaultAddrsFilter is used.
 	Filter AddrsFilter
 }
 
 func (r *DefaultResolver) ResolveAddrs(network, address string) (Addrs, error) {
-	addrs, err := resolveAddrs(network, address)
-	if err != nil {
-		return nil, err
-	}
 	filter := r.Filter
 	if filter == nil {
 		filter = DefaultAddrsFilter
 	}
-	addrs = filter(addrs)
-	if addrs.Len() == 0 {
-		return nil, errNoSuitableAddress
-	}
-	return addrs, nil
+	return resolveAddrs(network, address, filter)
 }
 
 // ResolveTCPAddrs parses address as a TCP address of the form "host:port"
-// or "[ipv6-host%zone]:port" and resolves a pair of domain name and port
-// name on the network network, which must be "tcp", "tcp4" or "tcp6".
+// or "[ipv6-host%zone]:port" and resolves list of pairs of domain name and
+// port number on the network, which must be "tcp", "tcp4" or "tcp6".
 // A literal address or host name for IPv6 must be enclosed in square
 // brackets, as in "[::1]:80", "[ipv6-host]:http" or "[ipv6-host%zone]:80".
 func ResolveTCPAddrs(network, address string) ([]*net.TCPAddr, error) {
@@ -52,7 +48,7 @@ func ResolveTCPAddrs(network, address string) ([]*net.TCPAddr, error) {
 	default:
 		return nil, net.UnknownNetworkError(network)
 	}
-	iaddrs, err := resolveAddrs(network, address)
+	iaddrs, err := resolveInternetAddrs(network, address)
 	if err != nil {
 		return nil, err
 	}
@@ -60,8 +56,8 @@ func ResolveTCPAddrs(network, address string) ([]*net.TCPAddr, error) {
 }
 
 // ResolveUDPAddrs parses address as a UDP address of the form "host:port"
-// or "[ipv6-host%zone]:port" and resolves a pair of domain name and port
-// name on the network, which must be "upd", "upd4" or "udp6".
+// or "[ipv6-host%zone]:port" and resolves a list of pairs of domain name and
+// port number on the network, which must be "upd", "upd4" or "udp6".
 // A literal address or host name for IPv6 must be enclosed in square
 // brackets, as in "[::1]:80", "[ipv6-host]:http" or "[ipv6-host%zone]:80".
 func ResolveUDPAddrs(network, address string) ([]*net.UDPAddr, error) {
@@ -70,7 +66,7 @@ func ResolveUDPAddrs(network, address string) ([]*net.UDPAddr, error) {
 	default:
 		return nil, net.UnknownNetworkError(network)
 	}
-	iaddrs, err := resolveAddrs(network, address)
+	iaddrs, err := resolveInternetAddrs(network, address)
 	if err != nil {
 		return nil, err
 	}
@@ -78,19 +74,19 @@ func ResolveUDPAddrs(network, address string) ([]*net.UDPAddr, error) {
 }
 
 // ResolveIPAddrs parses address as an IP address of the form "host" or
-// "ipv6-host%zone" and resolves the domain name on the network,
+// "ipv6-host%zone" and resolves the list of domain names on the network,
 // which must be "ip", "ip4" or "ip6".
 func ResolveIPAddrs(network, address string) ([]*net.IPAddr, error) {
-	nettt, err := parseNetwork(network)
+	nett, err := parseNetwork(network)
 	if err != nil {
 		return nil, err
 	}
-	switch nettt {
+	switch nett {
 	case "ip", "ip4", "ip6":
 	default:
 		return nil, net.UnknownNetworkError(network)
 	}
-	iaddrs, err := resolveAddrs(nettt, address)
+	iaddrs, err := resolveInternetAddrs(nett, address)
 	if err != nil {
 		return nil, err
 	}
@@ -110,20 +106,26 @@ func ResolveUnixAddrs(network, address string) ([]*net.UnixAddr, error) {
 	}
 }
 
-func resolveAddrs(network, address string) (Addrs, error) {
-	nettt, err := parseNetwork(network)
+func resolveAddrs(network, address string, filter AddrsFilter) (Addrs, error) {
+	nett, err := parseNetwork(network)
 	if err != nil {
 		return nil, err
 	}
 	if address == "" {
 		return nil, errMissingAddress
 	}
-	switch nettt {
+	switch nett {
 	case "unix", "unixgram", "unixpacket":
-		addrs := unixAddrs{&net.UnixAddr{Name: address, Net: network}}
-		return &addrs, nil
+		return unixAddrs{&net.UnixAddr{Name: address, Net: nett}}, nil
 	}
-	return resolveInternetAddrs(nettt, address)
+	addrs, err := resolveInternetAddrs(nett, address)
+	if filter != nil {
+		addrs = filter(addrs)
+	}
+	if addrs.Len() == 0 {
+		return nil, errNoSuitableAddress
+	}
+	return addrs, nil
 }
 
 func resolveInternetAddrs(network, address string) (Addrs, error) {
@@ -199,8 +201,6 @@ func resolveInternetAddrs(network, address string) (Addrs, error) {
 	if len(ips) == 0 {
 		return nil, errNoSuitableAddress
 	}
-	// TODO(abursavich): Sort addresses? Package net prefers
-	// IPv4 to IPv6 but uses at maximum one of each kind.
 	return ctor(ips...), nil
 }
 
@@ -251,11 +251,11 @@ func parseNetwork(network string) (string, error) {
 		}
 		return network, nil
 	}
-	nettt := network[:i]
-	switch nettt {
+	nett := network[:i]
+	switch nett {
 	case "ip", "ip4", "ip6":
 		// don't bother validating the proto
-		return nettt, nil
+		return nett, nil
 	}
 	return "", net.UnknownNetworkError(network)
 }
