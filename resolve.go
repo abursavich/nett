@@ -7,6 +7,9 @@ package nett
 import (
 	"errors"
 	"net"
+	"strconv"
+	"sync"
+	"time"
 )
 
 var (
@@ -35,6 +38,97 @@ func (r *DefaultResolver) ResolveAddrs(network, address string) (AddrList, error
 		filter = DefaultFilter
 	}
 	return resolveAddrs(network, address, filter)
+}
+
+type CacheResolver struct {
+	// Resolver resolves addresses that are not cached.
+	Resolver Resolver
+	// TTL is the time to live each resolved addresses.
+	// If TTL is zero, cached addresses do not expire.
+	TTL time.Duration
+
+	mu    sync.Mutex
+	cache map[string]*cacheItem
+}
+
+type cacheItem struct {
+	addrs AddrList
+	ttl   time.Time
+}
+
+// NewCacheResolver returns a new CacheResolver with the given
+// resolver and ttl. If resolver is nil, DefaultResolver will
+// be used.
+func NewCacheResolver(resolver Resolver, ttl time.Duration) *CacheResolver {
+	if resolver == nil {
+		resolver = defaultResolver
+	}
+	return &CacheResolver{
+		Resolver: resolver,
+		TTL:      ttl,
+		cache:    make(map[string]*cacheItem),
+	}
+}
+
+func (r *CacheResolver) ResolveAddrs(network, address string) (AddrList, error) {
+	key, err := cacheKey(network, address)
+	if err != nil {
+		return nil, err
+	}
+
+	r.mu.Lock()
+	if item, ok := r.cache[key]; ok {
+		if item.ttl.IsZero() || time.Now().Before(item.ttl) {
+			r.mu.Unlock()
+			return item.addrs, nil
+		}
+		delete(r.cache, key)
+	}
+	r.mu.Unlock()
+
+	addrs, err := r.Resolver.ResolveAddrs(network, address)
+	if err != nil {
+		return nil, err
+	}
+
+	var ttl time.Time
+	if r.TTL > 0 {
+		ttl = time.Now().Add(r.TTL)
+	}
+	r.mu.Lock()
+	r.cache[key] = &cacheItem{addrs, ttl}
+	r.mu.Unlock()
+
+	return addrs, err
+}
+
+func cacheKey(network, address string) (string, error) {
+	nett, err := parseNetwork(network)
+	if err != nil {
+		return "", err
+	}
+	if address == "" {
+		return "", errMissingAddress
+	}
+	switch nett {
+	case "unix", "unixgram", "unixpacket":
+		return nett + ":" + address, nil
+	case "tcp", "tcp4", "tcp6", "udp", "udp4", "udp6":
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return "", err
+		}
+		portnum, err := parsePort(nett, port)
+		if err != nil {
+			return "", err
+		}
+		// return fmt.Sprintf("%s:%s:%d", network, host, portnum), nil
+		return network + ":" + host + ":" + strconv.Itoa(portnum), nil
+	case "ip", "ip4", "ip6":
+		return address, nil
+	default:
+		return "", net.UnknownNetworkError(network)
+	}
 }
 
 // ResolveTCPAddrs parses address as a TCP address of the form "host:port"
