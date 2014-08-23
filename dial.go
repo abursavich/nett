@@ -125,7 +125,7 @@ func (d *Dialer) Dial(network, address string) (net.Conn, error) {
 	return d.dialMulti(dialer, network, addrs)
 }
 
-func resolveAddrsDeadline(resolver Resolver, network, address string, deadline time.Time) (Addrs, error) {
+func resolveAddrsDeadline(resolver Resolver, network, address string, deadline time.Time) (AddrList, error) {
 	if deadline.IsZero() {
 		return resolver.ResolveAddrs(network, address)
 	}
@@ -137,7 +137,7 @@ func resolveAddrsDeadline(resolver Resolver, network, address string, deadline t
 	t := time.NewTimer(timeout)
 	defer t.Stop()
 	type res struct {
-		Addrs
+		AddrList
 		error
 	}
 	resc := make(chan res, 1)
@@ -149,7 +149,7 @@ func resolveAddrsDeadline(resolver Resolver, network, address string, deadline t
 	case <-t.C:
 		return nil, errTimeout
 	case r := <-resc:
-		return r.Addrs, r.error
+		return r.AddrList, r.error
 	}
 }
 
@@ -166,7 +166,7 @@ func (d *Dialer) dialSingle(dialer net.Dialer, network, address string) (net.Con
 // the list of addresses. It will return the first established
 // connection and close the other connections. Otherwise it returns
 // error on the last attempt.
-func (d *Dialer) dialMulti(dialer net.Dialer, network string, addrs Addrs) (net.Conn, error) {
+func (d *Dialer) dialMulti(dialer net.Dialer, network string, addrs AddrList) (net.Conn, error) {
 	type racer struct {
 		net.Conn
 		error

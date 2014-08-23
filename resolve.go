@@ -18,7 +18,7 @@ var (
 )
 
 type Resolver interface {
-	ResolveAddrs(network, address string) (Addrs, error)
+	ResolveAddrs(network, address string) (AddrList, error)
 }
 
 type DefaultResolver struct {
@@ -29,7 +29,7 @@ type DefaultResolver struct {
 	Filter Filter
 }
 
-func (r *DefaultResolver) ResolveAddrs(network, address string) (Addrs, error) {
+func (r *DefaultResolver) ResolveAddrs(network, address string) (AddrList, error) {
 	filter := r.Filter
 	if filter == nil {
 		filter = DefaultFilter
@@ -106,7 +106,7 @@ func ResolveUnixAddrs(network, address string) ([]*net.UnixAddr, error) {
 	}
 }
 
-func resolveAddrs(network, address string, filter Filter) (Addrs, error) {
+func resolveAddrs(network, address string, filter Filter) (AddrList, error) {
 	nett, err := parseNetwork(network)
 	if err != nil {
 		return nil, err
@@ -128,7 +128,7 @@ func resolveAddrs(network, address string, filter Filter) (Addrs, error) {
 	return addrs, nil
 }
 
-func resolveInternetAddrs(network, address string) (Addrs, error) {
+func resolveInternetAddrs(network, address string) (AddrList, error) {
 	var (
 		err              error
 		host, port, zone string
@@ -149,7 +149,7 @@ func resolveInternetAddrs(network, address string) (Addrs, error) {
 	default:
 		return nil, net.UnknownNetworkError(network)
 	}
-	ctor := func(ips ...net.IP) Addrs {
+	ctor := func(ips ...net.IP) AddrList {
 		switch network {
 		case "tcp", "tcp4", "tcp6":
 			addrs := make(tcpAddrs, len(ips))
