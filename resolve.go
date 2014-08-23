@@ -25,14 +25,14 @@ type DefaultResolver struct {
 	// Filter selects addresses from those available after
 	// resolving a host. It is not applied to Unix addresses.
 	//
-	// If nil, DefaultAddrsFilter is used.
-	Filter AddrsFilter
+	// If nil, DefaultFilter is used.
+	Filter Filter
 }
 
 func (r *DefaultResolver) ResolveAddrs(network, address string) (Addrs, error) {
 	filter := r.Filter
 	if filter == nil {
-		filter = DefaultAddrsFilter
+		filter = DefaultFilter
 	}
 	return resolveAddrs(network, address, filter)
 }
@@ -106,7 +106,7 @@ func ResolveUnixAddrs(network, address string) ([]*net.UnixAddr, error) {
 	}
 }
 
-func resolveAddrs(network, address string, filter AddrsFilter) (Addrs, error) {
+func resolveAddrs(network, address string, filter Filter) (Addrs, error) {
 	nett, err := parseNetwork(network)
 	if err != nil {
 		return nil, err

@@ -9,8 +9,8 @@ import (
 	"net"
 )
 
-// AddrsFilter selects addresses from addrs.
-type AddrsFilter func(addrs Addrs) Addrs
+// Filter selects addresses from addrs.
+type Filter func(addrs Addrs) Addrs
 
 // Addrs provides a way to interact with an enumerated
 // collection of addresses.
@@ -63,10 +63,10 @@ func (a unixAddrs) Append(addrs Addrs, i int) Addrs {
 	return append(t, a[i])
 }
 
-// DefaultAddrsFilter selects the first address IPv4 address
+// DefaultFilter selects the first address IPv4 address
 // in addrs. If only IPv6 addresses exist in addrs, then it
 // selects the first IPv6 address.
-func DefaultAddrsFilter(addrs Addrs) Addrs {
+func DefaultFilter(addrs Addrs) Addrs {
 	if addrs == nil {
 		return nil
 	}
@@ -88,13 +88,13 @@ func DefaultAddrsFilter(addrs Addrs) Addrs {
 	return addrs.Append(nil, ipv6)
 }
 
-// NoAddrsFilter selects all addresses in addrs.
-func NoAddrsFilter(addrs Addrs) Addrs {
+// NoFilter selects all addresses in addrs.
+func NoFilter(addrs Addrs) Addrs {
 	return addrs
 }
 
-// FirstAddrsFilter selects the first address in addrs.
-func FirstAddrsFilter(addrs Addrs) Addrs {
+// FirstFilter selects the first address in addrs.
+func FirstFilter(addrs Addrs) Addrs {
 	if addrs == nil {
 		return nil
 	}
@@ -105,9 +105,9 @@ func FirstAddrsFilter(addrs Addrs) Addrs {
 	return addrs.Append(nil, 0)
 }
 
-// FirstEachAddrsFilter selects the first IPv4 address
+// FirstEachFilter selects the first IPv4 address
 // and IPv6 address in addrs.
-func FirstEachAddrsFilter(addrs Addrs) Addrs {
+func FirstEachFilter(addrs Addrs) Addrs {
 	if addrs == nil {
 		return nil
 	}
@@ -134,8 +134,8 @@ func FirstEachAddrsFilter(addrs Addrs) Addrs {
 	return a
 }
 
-// FirstIPv4AddrsFilter selects the first IPv4 address in addrs.
-func FirstIPv4AddrsFilter(addrs Addrs) Addrs {
+// FirstIPv4Filter selects the first IPv4 address in addrs.
+func FirstIPv4Filter(addrs Addrs) Addrs {
 	if addrs == nil {
 		return nil
 	}
@@ -148,8 +148,8 @@ func FirstIPv4AddrsFilter(addrs Addrs) Addrs {
 	return nil
 }
 
-// FirstIPv6AddrsFilter selects the first IPv6 address in addrs.
-func FirstIPv6AddrsFilter(addrs Addrs) Addrs {
+// FirstIPv6Filter selects the first IPv6 address in addrs.
+func FirstIPv6Filter(addrs Addrs) Addrs {
 	if addrs == nil {
 		return nil
 	}
@@ -162,8 +162,8 @@ func FirstIPv6AddrsFilter(addrs Addrs) Addrs {
 	return nil
 }
 
-// IPv4AddrsFilter selects all IPv4 addresses in addrs.
-func IPv4AddrsFilter(addrs Addrs) Addrs {
+// IPv4Filter selects all IPv4 addresses in addrs.
+func IPv4Filter(addrs Addrs) Addrs {
 	if addrs == nil {
 		return nil
 	}
@@ -177,8 +177,8 @@ func IPv4AddrsFilter(addrs Addrs) Addrs {
 	return a
 }
 
-// IPv6AddrsFilter selects all IPv6 addresses in addrs.
-func IPv6AddrsFilter(addrs Addrs) Addrs {
+// IPv6Filter selects all IPv6 addresses in addrs.
+func IPv6Filter(addrs Addrs) Addrs {
 	if addrs == nil {
 		return nil
 	}
@@ -192,13 +192,13 @@ func IPv6AddrsFilter(addrs Addrs) Addrs {
 	return a
 }
 
-// MaxAddrsFilter returns an AddrsFilter that selects up to max
+// MaxFilter returns an Filter that selects up to max
 // addresses. It will split the results evenly between availabe
 // IPv4 and IPv6 addresses. If one type of address doesn't exist
 // in sufficient quantity to consume its share, the other type
 // will be allowed to fill any extra space in the result.
 // Addresses toward the front of the collection are preferred.
-func MaxAddrsFilter(max int) AddrsFilter {
+func MaxFilter(max int) Filter {
 	return func(addrs Addrs) Addrs {
 		if addrs == nil {
 			return nil
@@ -237,9 +237,9 @@ func MaxAddrsFilter(max int) AddrsFilter {
 	}
 }
 
-// ReverseAddrsFilter selects all addresses in addrs
+// ReverseFilter selects all addresses in addrs
 // in reverse order.
-func ReverseAddrsFilter(addrs Addrs) Addrs {
+func ReverseFilter(addrs Addrs) Addrs {
 	if addrs == nil {
 		return nil
 	}
@@ -254,9 +254,9 @@ func ReverseAddrsFilter(addrs Addrs) Addrs {
 	return a
 }
 
-// ShuffleAddrsFilter selects all addresses in addrs
+// ShuffleFilter selects all addresses in addrs
 // in random order.
-func ShuffleAddrsFilter(addrs Addrs) Addrs {
+func ShuffleFilter(addrs Addrs) Addrs {
 	if addrs == nil {
 		return nil
 	}
@@ -271,15 +271,15 @@ func ShuffleAddrsFilter(addrs Addrs) Addrs {
 	return a
 }
 
-// ComposeAddrsFilters returns an AddrsFilter that applies
+// ComposeFilters returns an Filter that applies
 // filters in sequence.
 //
 // Example:
 //	// selects one random IPv4 and IPv6 address
-//	ComposeAddrsFilters(ShuffleAddrsFilter, FirstEachAddrsFilter)
-//	// equivalent to FirstIPv4AddrsFilter
-//	ComposeAddrsFilters(IPv4AddrsFilter, FirstAddrsFilter)
-func ComposeAddrsFilters(filters ...AddrsFilter) AddrsFilter {
+//	ComposeFilters(ShuffleFilter, FirstEachFilter)
+//	// equivalent to FirstIPv4Filter
+//	ComposeFilters(IPv4Filter, FirstFilter)
+func ComposeFilters(filters ...Filter) Filter {
 	return func(addrs Addrs) Addrs {
 		for _, filter := range filters {
 			addrs = filter(addrs)
