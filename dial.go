@@ -14,6 +14,7 @@ var errTimeout = error(&timeoutError{})
 // Filter selcts IP addresses from ips.
 type Filter func(ips []net.IP) []net.IP
 
+// A Dialer contains options for connecting to an address.
 type Dialer struct {
 	// Timeout is the maximum amount of time a dial will wait for
 	// a connect to complete. If Deadline is also set, it may fail

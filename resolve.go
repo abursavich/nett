@@ -35,7 +35,7 @@ type Resolver interface {
 // resolver.
 type DefaultResolver struct{}
 
-// DefaultResolver looks up host using the local resolver.
+// Resolve looks up host using the local resolver.
 // It returns a slice of that host's IPv4 and IPv6 addresses.
 func (r *DefaultResolver) Resolve(host string) ([]net.IP, error) {
 	if host == "" {
@@ -72,6 +72,10 @@ func NewCacheResolver(resolver Resolver, ttl time.Duration) *CacheResolver {
 	}
 }
 
+// Resolve looks up the IP addresses of a host in its cache.
+// If not found in its cache, the CacheResolver's Resolver is
+// used to look up the hosts IPs. Successful results are added
+// to the cache.
 func (r *CacheResolver) Resolve(host string) ([]net.IP, error) {
 	r.mu.Lock()
 	if item, ok := r.cache[host]; ok {
