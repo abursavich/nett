@@ -39,7 +39,7 @@ type Dialer struct {
 	// If nil, a local address is automatically chosen.
 	LocalAddr net.Addr
 
-	// Resolver is used to resolve IP addresses from hosts.
+	// Resolver is used to resolve IP addresses from domain names.
 	//
 	// If nil, DefaultResolver will be used.
 	Resolver Resolver
@@ -108,9 +108,6 @@ func (d *Dialer) deadline() time.Time {
 func (d *Dialer) Dial(network, address string) (net.Conn, error) {
 	deadline := d.deadline()
 	resolver := d.Resolver
-	if resolver == nil {
-		resolver = defaultResolver
-	}
 	filter := d.Filter
 	if filter == nil {
 		filter = DefaultFilter
@@ -245,6 +242,11 @@ func DualStackFilter(ips []net.IP) []net.IP {
 		}
 	}
 	return a
+}
+
+// NoFilter selects all IP addresses.
+func NoFilter(ips []net.IP) []net.IP {
+	return ips
 }
 
 // MaxFilter returns a Filter that selects up to max addresses.

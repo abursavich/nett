@@ -12,6 +12,7 @@ import (
 )
 
 var (
+	errInvalidAddress    = errors.New("invalid address")
 	errMissingAddress    = errors.New("missing address")
 	errMissingHost       = errors.New("missing host")
 	errNoSuitableAddress = errors.New("no suitable address found")
@@ -20,12 +21,22 @@ var (
 	lookupIPs       = net.LookupIP // used by tests
 )
 
+// Resolver is an interface representing the ability to lookup the
+// IP addresses of a host. It may return results containing networks
+// not supported by the platform.
+//
+// A Resolver must be safe for concurrent use by multiple goroutines.
 type Resolver interface {
-	Resolve(host string) ([]net.IP, error)
+	// Resolve returns a slice of host's IPv4 and IPv6 addresses.
+	Resolve(domain string) ([]net.IP, error)
 }
 
+// DefaultResolver looks up the IP addresses of a host using the local
+// resolver.
 type DefaultResolver struct{}
 
+// DefaultResolver looks up host using the local resolver.
+// It returns a slice of that host's IPv4 and IPv6 addresses.
 func (r *DefaultResolver) Resolve(host string) ([]net.IP, error) {
 	if host == "" {
 		return nil, errMissingHost
@@ -33,6 +44,7 @@ func (r *DefaultResolver) Resolve(host string) ([]net.IP, error) {
 	return lookupIPs(host)
 }
 
+// CacheResolver looks up the IP addresses of a host and caches results.
 type CacheResolver struct {
 	// Resolver resolves hosts that are not cached.
 	// If Resolver is nil, DefaultResolver will be used.
@@ -94,19 +106,21 @@ func (r *CacheResolver) Resolve(host string) ([]net.IP, error) {
 	return ips, err
 }
 
-// ResolveTCPAddrs parses address as a TCP address of the form "host:port"
-// or "[ipv6-host%zone]:port" and resolves list of pairs of domain name and
-// port number on the network, which must be "tcp", "tcp4" or "tcp6".
-// A literal address or host name for IPv6 must be enclosed in square
-// brackets, as in "[::1]:80", "[ipv6-host]:http" or "[ipv6-host%zone]:80".
+// ResolveTCPAddrs parses address of the form "host:port" or
+// "[ipv6-host%zone]:port" and resolves a list of TCP addresses on the
+// network, which must be "tcp", "tcp4" or "tcp6". A literal address or
+// host name for IPv6 must be enclosed in square brackets, as in "[::1]:80",
+// "[ipv6-host]:http" or "[ipv6-host%zone]:80".
+//
+// If host is a domain name, resolver is used to resolve a list of platform
+// supported IP addresses. If resolver is nil, DefaultResolver is used.
+//
+// If filter is non-nil, resolved IP addresses are selected by applying it.
 func ResolveTCPAddrs(resolver Resolver, filter Filter, network, address string) ([]*net.TCPAddr, error) {
 	switch network {
 	case "tcp", "tcp4", "tcp6":
 	default:
 		return nil, net.UnknownNetworkError(network)
-	}
-	if resolver == nil {
-		resolver = defaultResolver
 	}
 	addrs, err := resolveInternetAddrList(resolver, filter, network, address)
 	if err != nil {
@@ -115,19 +129,21 @@ func ResolveTCPAddrs(resolver Resolver, filter Filter, network, address string) 
 	return addrs.(tcpList), nil
 }
 
-// ResolveUDPAddrs parses address as a UDP address of the form "host:port"
-// or "[ipv6-host%zone]:port" and resolves a list of pairs of domain name and
-// port number on the network, which must be "upd", "upd4" or "udp6".
-// A literal address or host name for IPv6 must be enclosed in square
-// brackets, as in "[::1]:80", "[ipv6-host]:http" or "[ipv6-host%zone]:80".
+// ResolveUDPAddrs parses address of the form "host:port" or
+// "[ipv6-host%zone]:port" and resolves a list of UDP addresses on the
+// network, which must be "udp", "udp4" or "udp6". A literal address or
+// host name for IPv6 must be enclosed in square brackets, as in "[::1]:80",
+// "[ipv6-host]:http" or "[ipv6-host%zone]:80".
+//
+// If host is a domain name, resolver is used to resolve a list of platform
+// supported IP addresses. If resolver is nil, DefaultResolver is used.
+//
+// If filter is non-nil, resolved IP addresses are selected by applying it.
 func ResolveUDPAddrs(resolver Resolver, filter Filter, network, address string) ([]*net.UDPAddr, error) {
 	switch network {
 	case "udp", "udp4", "udp6":
 	default:
 		return nil, net.UnknownNetworkError(network)
-	}
-	if resolver == nil {
-		resolver = defaultResolver
 	}
 	addrs, err := resolveInternetAddrList(resolver, filter, network, address)
 	if err != nil {
@@ -136,9 +152,14 @@ func ResolveUDPAddrs(resolver Resolver, filter Filter, network, address string) 
 	return addrs.(udpList), nil
 }
 
-// ResolveIPAddrs parses address as an IP address of the form "host" or
-// "ipv6-host%zone" and resolves the list of domain names on the network,
-// which must be "ip", "ip4" or "ip6".
+// ResolveIPAddrs parses address of the form "host" or "ipv6-host%zone" and
+// resolves a list of IP addresses on the network, which must be "ip", "ip4"
+// or "ip6".
+//
+// If host is a domain name, resolver is used to resolve a list of platform
+// supported IP addresses. If resolver is nil, DefaultResolver is used.
+//
+// If filter is non-nil, resolved IP addresses are selected by applying it.
 func ResolveIPAddrs(resolver Resolver, filter Filter, network, address string) ([]*net.IPAddr, error) {
 	nett, err := parseNetwork(network)
 	if err != nil {
@@ -148,9 +169,6 @@ func ResolveIPAddrs(resolver Resolver, filter Filter, network, address string) (
 	case "ip", "ip4", "ip6":
 	default:
 		return nil, net.UnknownNetworkError(network)
-	}
-	if resolver == nil {
-		resolver = defaultResolver
 	}
 	addrs, err := resolveInternetAddrList(resolver, filter, network, address)
 	if err != nil {
@@ -216,6 +234,12 @@ func resolveInternetAddrList(resolver Resolver, filter Filter, network, address 
 	} else {
 		// Try as a DNS name.
 		host, zone = splitHostZone(host)
+		if !isDomainName(host) {
+			return nil, errInvalidAddress
+		}
+		if resolver == nil {
+			resolver = defaultResolver
+		}
 		ips, err = resolver.Resolve(host)
 		if err != nil {
 			return nil, err
@@ -458,6 +482,54 @@ func filterIPs(filter func(net.IP) net.IP, ips []net.IP) []net.IP {
 		}
 	}
 	return ips[:n]
+}
+
+func isDomainName(s string) bool {
+	// See RFC 1035, RFC 3696.
+	if len(s) == 0 {
+		return false
+	}
+	if len(s) > 255 {
+		return false
+	}
+
+	last := byte('.')
+	ok := false // Ok once we've seen a letter.
+	partlen := 0
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		default:
+			return false
+		case 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || c == '_':
+			ok = true
+			partlen++
+		case '0' <= c && c <= '9':
+			// fine
+			partlen++
+		case c == '-':
+			// Byte before dash cannot be dot.
+			if last == '.' {
+				return false
+			}
+			partlen++
+		case c == '.':
+			// Byte before dot cannot be dot, dash.
+			if last == '.' || last == '-' {
+				return false
+			}
+			if partlen > 63 || partlen == 0 {
+				return false
+			}
+			partlen = 0
+		}
+		last = c
+	}
+	if last == '-' || partlen > 63 {
+		return false
+	}
+
+	return ok
 }
 
 // ipv4only returns IPv4 addresses that we can use with the kernel's
