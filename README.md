@@ -5,4 +5,4 @@ Package nett steals from the standard library's net package and attempts to prov
 
 EXPERIMENTAL
 
-See: [GoDoc](http://godoc.org/github.com/abursavich/nett)
+[![GoDoc](https://godoc.org/github.com/abursavich/nett?status.svg)](https://godoc.org/github.com/abursavich/nett)
