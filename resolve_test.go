@@ -6,8 +6,10 @@ package nett
 
 import (
 	"net"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 type testAddr struct {
@@ -119,4 +121,48 @@ func TestResolveIP(t *testing.T) {
 			t.Errorf("test: %#v\nnet: %s; addr: %s\nno addresses\n", ta, ta.net, ta.addr)
 		}
 	}
+}
+
+func TestCacheResolver(t *testing.T) {
+	defer func(lookupFn func(string) ([]net.IP, error), timeFn func() time.Time) {
+		lookupIPs = lookupFn
+		timeNow = timeFn
+	}(lookupIPs, timeNow)
+	lookups := 0
+	ips := []net.IP{net.IPv6loopback}
+	lookupIPs = func(string) ([]net.IP, error) {
+		lookups++
+		return ips, nil
+	}
+	start := time.Now()
+	now := start
+	ttl := time.Second
+	timeNow = func() time.Time { return now }
+	resolver := NewCacheResolver(nil, ttl)
+	validate := func(host string, expLookups int) {
+		ips0, err := resolver.Resolve(host)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if lookups != expLookups {
+			t.Fatalf("lookups: expected %d; got %d", expLookups, lookups)
+		}
+		if !reflect.DeepEqual(ips, ips0) {
+			t.Fatalf("ips: expected %v; got %v", ips, ips0)
+		}
+		ips0[0] = nil
+		if reflect.DeepEqual(ips, ips0) {
+			t.Fatal("ips: expected copy; got same")
+		}
+	}
+	validate("foo.com", 1)       // lookup foo.com
+	now = start.Add(ttl / 2)     //
+	validate("bar.net", 2)       // lookup bar.net
+	validate("foo.com", 2)       // cached
+	now = start.Add(ttl)         // expire foo.com
+	validate("foo.com", 3)       // lookup foo.com
+	validate("bar.net", 3)       // cached
+	now = start.Add(ttl + ttl/2) // expire bar.net
+	validate("foo.com", 3)       // cached
+	validate("bar.net", 4)       // lookup bar.net
 }

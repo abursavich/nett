@@ -19,6 +19,7 @@ var (
 
 	defaultResolver = &DefaultResolver{}
 	lookupIPs       = net.LookupIP // used by tests
+	timeNow         = time.Now     // used by tests
 )
 
 // Resolver is an interface representing the ability to lookup the
@@ -79,7 +80,7 @@ func NewCacheResolver(resolver Resolver, ttl time.Duration) *CacheResolver {
 func (r *CacheResolver) Resolve(host string) ([]net.IP, error) {
 	r.mu.Lock()
 	if item, ok := r.cache[host]; ok {
-		if item.ttl.IsZero() || time.Now().Before(item.ttl) {
+		if item.ttl.IsZero() || timeNow().Before(item.ttl) {
 			r.mu.Unlock()
 			ips := make([]net.IP, len(item.ips))
 			copy(ips, item.ips)
@@ -100,7 +101,7 @@ func (r *CacheResolver) Resolve(host string) ([]net.IP, error) {
 
 	var ttl time.Time
 	if r.TTL > 0 {
-		ttl = time.Now().Add(r.TTL)
+		ttl = timeNow().Add(r.TTL)
 	}
 	r.mu.Lock()
 	if r.cache == nil {
