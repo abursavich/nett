@@ -77,7 +77,9 @@ func (r *CacheResolver) Resolve(host string) ([]net.IP, error) {
 	if item, ok := r.cache[host]; ok {
 		if item.ttl.IsZero() || time.Now().Before(item.ttl) {
 			r.mu.Unlock()
-			return item.ips, nil
+			ips := make([]net.IP, len(item.ips))
+			copy(ips, item.ips)
+			return ips, nil
 		}
 		delete(r.cache, host)
 	}
@@ -87,7 +89,7 @@ func (r *CacheResolver) Resolve(host string) ([]net.IP, error) {
 	if resolver == nil {
 		resolver = defaultResolver
 	}
-	ips, err := r.Resolver.Resolve(host)
+	ips, err := resolver.Resolve(host)
 	if err != nil {
 		return nil, err
 	}
@@ -100,9 +102,12 @@ func (r *CacheResolver) Resolve(host string) ([]net.IP, error) {
 	if r.cache == nil {
 		r.cache = make(map[string]*cacheItem)
 	}
-	r.cache[host] = &cacheItem{ips, ttl}
+	item := &cacheItem{ips, ttl}
+	r.cache[host] = item
 	r.mu.Unlock()
 
+	ips = make([]net.IP, len(item.ips))
+	copy(ips, item.ips)
 	return ips, err
 }
 
