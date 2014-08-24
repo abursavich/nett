@@ -11,6 +11,9 @@ import (
 
 var errTimeout = error(&timeoutError{})
 
+// Filter selcts IP addresses from ips.
+type Filter func(ips []net.IP) []net.IP
+
 type Dialer struct {
 	// Timeout is the maximum amount of time a dial will wait for
 	// a connect to complete. If Deadline is also set, it may fail
@@ -195,6 +198,97 @@ func dialMulti(dialer net.Dialer, network string, addrs addrList) (net.Conn, err
 		lastErr = racer.error
 	}
 	return nil, lastErr
+}
+
+// DefaultFilter selects the first IPv4 address in ips.
+// If only IPv6 addresses exist in ips, then it selects
+// the first IPv6 address.
+func DefaultFilter(ips []net.IP) []net.IP {
+	if len(ips) <= 1 {
+		return ips
+	}
+	var ipv6 net.IP
+	for _, ip := range ips {
+		if ipLen := len(ip); ipLen == net.IPv4len {
+			return []net.IP{ip}
+		} else if ipv6 == nil && ipLen == net.IPv6len {
+			ipv6 = ip
+		}
+	}
+	if ipv6 == nil {
+		return nil // shouldn't ever happen
+	}
+	return []net.IP{ipv6}
+}
+
+// DualStackFilter selects the first IPv4 address
+// and IPv6 address in ips.
+func DualStackFilter(ips []net.IP) []net.IP {
+	k := len(ips)
+	if k <= 1 {
+		return ips
+	}
+	var (
+		ipv4, ipv6 bool
+		a          []net.IP
+	)
+	for _, ip := range ips {
+		if ipLen := len(ip); !ipv4 && ipLen == net.IPv4len {
+			a = append(a, ip)
+			ipv4 = true
+		} else if !ipv6 && ipLen == net.IPv6len {
+			a = append(a, ip)
+			ipv6 = true
+		}
+		if ipv4 && ipv6 {
+			break
+		}
+	}
+	return a
+}
+
+// MaxFilter returns a Filter that selects up to max addresses.
+// It will split the results evenly between availabe IPv4 and
+// IPv6 addresses. If one type of address doesn't exist in
+// sufficient quantity to consume its share, the other type
+// will be allowed to fill any extra space in the result.
+// Addresses toward the front of the collection are preferred.
+func MaxFilter(max int) Filter {
+	return func(ips []net.IP) []net.IP {
+		if len(ips) <= max {
+			return ips
+		}
+		var ipv4, ipv6 int
+		for _, ip := range ips {
+			if ipLen := len(ip); ipLen == net.IPv4len {
+				ipv4++
+			} else if ipLen == net.IPv6len {
+				ipv6++
+			}
+		}
+		if halfLen := max / 2; ipv6 <= halfLen {
+			ipv4 = max - ipv6
+		} else if ipv4 <= halfLen {
+			ipv6 = max - ipv4
+		} else {
+			ipv4 = max - halfLen // give rounding benefit to ipv4
+			ipv6 = halfLen
+		}
+		var a []net.IP
+		for _, ip := range ips {
+			if ipLen := len(ip); ipv4 > 0 && ipLen == net.IPv4len {
+				a = append(a, ip)
+				ipv4--
+			} else if ipv6 > 0 && ipLen == net.IPv6len {
+				a = append(a, ip)
+				ipv6--
+			}
+			if ipv4 == 0 && ipv6 == 0 {
+				break
+			}
+		}
+		return a
+	}
 }
 
 type addrList interface {
