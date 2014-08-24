@@ -7,44 +7,38 @@ package nett
 import (
 	"errors"
 	"net"
-	"strconv"
 	"sync"
 	"time"
 )
 
 var (
-	errTimeout           = error(&timeoutError{})
 	errMissingAddress    = errors.New("missing address")
+	errMissingHost       = errors.New("missing host")
 	errNoSuitableAddress = errors.New("no suitable address found")
 
 	defaultResolver = &DefaultResolver{}
+	lookupIPs       = net.LookupIP // used by tests
 )
 
 type Resolver interface {
-	ResolveAddrs(network, address string) (AddrList, error)
+	Resolve(host string) ([]net.IP, error)
 }
 
-type DefaultResolver struct {
-	// Filter selects addresses from those available after
-	// resolving a host. It is not applied to Unix addresses.
-	//
-	// If nil, DefaultFilter is used.
-	Filter Filter
-}
+type DefaultResolver struct{}
 
-func (r *DefaultResolver) ResolveAddrs(network, address string) (AddrList, error) {
-	filter := r.Filter
-	if filter == nil {
-		filter = DefaultFilter
+func (r *DefaultResolver) Resolve(host string) ([]net.IP, error) {
+	if host == "" {
+		return nil, errMissingHost
 	}
-	return resolveAddrs(network, address, filter)
+	return lookupIPs(host)
 }
 
 type CacheResolver struct {
-	// Resolver resolves addresses that are not cached.
+	// Resolver resolves hosts that are not cached.
+	// If Resolver is nil, DefaultResolver will be used.
 	Resolver Resolver
-	// TTL is the time to live each resolved addresses.
-	// If TTL is zero, cached addresses do not expire.
+	// TTL is the time to live for resolved hosts.
+	// If TTL is zero, cached hosts do not expire.
 	TTL time.Duration
 
 	mu    sync.Mutex
@@ -52,17 +46,13 @@ type CacheResolver struct {
 }
 
 type cacheItem struct {
-	addrs AddrList
-	ttl   time.Time
+	ips []net.IP
+	ttl time.Time
 }
 
 // NewCacheResolver returns a new CacheResolver with the given
-// resolver and ttl. If resolver is nil, DefaultResolver will
-// be used.
+// resolver and ttl.
 func NewCacheResolver(resolver Resolver, ttl time.Duration) *CacheResolver {
-	if resolver == nil {
-		resolver = defaultResolver
-	}
 	return &CacheResolver{
 		Resolver: resolver,
 		TTL:      ttl,
@@ -70,23 +60,22 @@ func NewCacheResolver(resolver Resolver, ttl time.Duration) *CacheResolver {
 	}
 }
 
-func (r *CacheResolver) ResolveAddrs(network, address string) (AddrList, error) {
-	key, err := cacheKey(network, address)
-	if err != nil {
-		return nil, err
-	}
-
+func (r *CacheResolver) Resolve(host string) ([]net.IP, error) {
 	r.mu.Lock()
-	if item, ok := r.cache[key]; ok {
+	if item, ok := r.cache[host]; ok {
 		if item.ttl.IsZero() || time.Now().Before(item.ttl) {
 			r.mu.Unlock()
-			return item.addrs, nil
+			return item.ips, nil
 		}
-		delete(r.cache, key)
+		delete(r.cache, host)
 	}
 	r.mu.Unlock()
 
-	addrs, err := r.Resolver.ResolveAddrs(network, address)
+	resolver := r.Resolver
+	if resolver == nil {
+		resolver = defaultResolver
+	}
+	ips, err := r.Resolver.Resolve(host)
 	if err != nil {
 		return nil, err
 	}
@@ -96,39 +85,13 @@ func (r *CacheResolver) ResolveAddrs(network, address string) (AddrList, error) 
 		ttl = time.Now().Add(r.TTL)
 	}
 	r.mu.Lock()
-	r.cache[key] = &cacheItem{addrs, ttl}
+	if r.cache == nil {
+		r.cache = make(map[string]*cacheItem)
+	}
+	r.cache[host] = &cacheItem{ips, ttl}
 	r.mu.Unlock()
 
-	return addrs, err
-}
-
-func cacheKey(network, address string) (string, error) {
-	nett, err := parseNetwork(network)
-	if err != nil {
-		return "", err
-	}
-	if address == "" {
-		return "", errMissingAddress
-	}
-	switch nett {
-	case "unix", "unixgram", "unixpacket":
-		return nett + ":" + address, nil
-	case "tcp", "tcp4", "tcp6", "udp", "udp4", "udp6":
-		host, port, err := net.SplitHostPort(address)
-		if err != nil {
-			return "", err
-		}
-		portnum, err := parsePort(nett, port)
-		if err != nil {
-			return "", err
-		}
-		// return fmt.Sprintf("%s:%s:%d", network, host, portnum), nil
-		return network + ":" + host + ":" + strconv.Itoa(portnum), nil
-	case "ip", "ip4", "ip6":
-		return address, nil
-	default:
-		return "", net.UnknownNetworkError(network)
-	}
+	return ips, err
 }
 
 // ResolveTCPAddrs parses address as a TCP address of the form "host:port"
@@ -136,17 +99,20 @@ func cacheKey(network, address string) (string, error) {
 // port number on the network, which must be "tcp", "tcp4" or "tcp6".
 // A literal address or host name for IPv6 must be enclosed in square
 // brackets, as in "[::1]:80", "[ipv6-host]:http" or "[ipv6-host%zone]:80".
-func ResolveTCPAddrs(network, address string) ([]*net.TCPAddr, error) {
+func ResolveTCPAddrs(resolver Resolver, filter Filter, network, address string) ([]*net.TCPAddr, error) {
 	switch network {
 	case "tcp", "tcp4", "tcp6":
 	default:
 		return nil, net.UnknownNetworkError(network)
 	}
-	iaddrs, err := resolveInternetAddrs(network, address)
+	if resolver == nil {
+		resolver = defaultResolver
+	}
+	addrs, err := resolveInternetAddrList(resolver, filter, network, address)
 	if err != nil {
 		return nil, err
 	}
-	return iaddrs.(tcpAddrs), nil
+	return addrs.(tcpList), nil
 }
 
 // ResolveUDPAddrs parses address as a UDP address of the form "host:port"
@@ -154,23 +120,26 @@ func ResolveTCPAddrs(network, address string) ([]*net.TCPAddr, error) {
 // port number on the network, which must be "upd", "upd4" or "udp6".
 // A literal address or host name for IPv6 must be enclosed in square
 // brackets, as in "[::1]:80", "[ipv6-host]:http" or "[ipv6-host%zone]:80".
-func ResolveUDPAddrs(network, address string) ([]*net.UDPAddr, error) {
+func ResolveUDPAddrs(resolver Resolver, filter Filter, network, address string) ([]*net.UDPAddr, error) {
 	switch network {
 	case "udp", "udp4", "udp6":
 	default:
 		return nil, net.UnknownNetworkError(network)
 	}
-	iaddrs, err := resolveInternetAddrs(network, address)
+	if resolver == nil {
+		resolver = defaultResolver
+	}
+	addrs, err := resolveInternetAddrList(resolver, filter, network, address)
 	if err != nil {
 		return nil, err
 	}
-	return iaddrs.(udpAddrs), nil
+	return addrs.(udpList), nil
 }
 
 // ResolveIPAddrs parses address as an IP address of the form "host" or
 // "ipv6-host%zone" and resolves the list of domain names on the network,
 // which must be "ip", "ip4" or "ip6".
-func ResolveIPAddrs(network, address string) ([]*net.IPAddr, error) {
+func ResolveIPAddrs(resolver Resolver, filter Filter, network, address string) ([]*net.IPAddr, error) {
 	nett, err := parseNetwork(network)
 	if err != nil {
 		return nil, err
@@ -180,27 +149,17 @@ func ResolveIPAddrs(network, address string) ([]*net.IPAddr, error) {
 	default:
 		return nil, net.UnknownNetworkError(network)
 	}
-	iaddrs, err := resolveInternetAddrs(nett, address)
+	if resolver == nil {
+		resolver = defaultResolver
+	}
+	addrs, err := resolveInternetAddrList(resolver, filter, network, address)
 	if err != nil {
 		return nil, err
 	}
-	return iaddrs.(ipAddrs), nil
+	return addrs.(ipList), nil
 }
 
-// ResolveUnixAddrs parses address as a Unix domain socket address.
-// The string network gives the network name "unix", "unixgram" or
-// "unixpacket".
-func ResolveUnixAddrs(network, address string) ([]*net.UnixAddr, error) {
-	// this function is really stupid but included for completeness/symmetry
-	switch network {
-	case "unix", "unixgram", "unixpacket":
-		return []*net.UnixAddr{&net.UnixAddr{Name: address, Net: network}}, nil
-	default:
-		return nil, net.UnknownNetworkError(network)
-	}
-}
-
-func resolveAddrs(network, address string, filter Filter) (AddrList, error) {
+func resolveAddrList(resolver Resolver, filter Filter, network, address string) (addrList, error) {
 	nett, err := parseNetwork(network)
 	if err != nil {
 		return nil, err
@@ -210,55 +169,33 @@ func resolveAddrs(network, address string, filter Filter) (AddrList, error) {
 	}
 	switch nett {
 	case "unix", "unixgram", "unixpacket":
-		return unixAddrs{&net.UnixAddr{Name: address, Net: nett}}, nil
+		return unixList{&net.UnixAddr{Name: address, Net: nett}}, nil
 	}
-	addrs, err := resolveInternetAddrs(nett, address)
-	if filter != nil {
-		addrs = filter(addrs)
-	}
-	if addrs == nil || addrs.Len() == 0 {
-		return nil, errNoSuitableAddress
-	}
-	return addrs, nil
+	return resolveInternetAddrList(resolver, filter, nett, address)
 }
 
-func resolveInternetAddrs(network, address string) (AddrList, error) {
-	var (
-		err              error
-		host, port, zone string
-		portnum          int
-	)
-	switch network {
-	case "tcp", "tcp4", "tcp6", "udp", "udp4", "udp6":
-		if address != "" {
-			if host, port, err = net.SplitHostPort(address); err != nil {
-				return nil, err
-			}
-			if portnum, err = parsePort(network, port); err != nil {
-				return nil, err
-			}
-		}
-	case "ip", "ip4", "ip6":
-		host = address
-	default:
-		return nil, net.UnknownNetworkError(network)
+func resolveInternetAddrList(resolver Resolver, filter Filter, network, address string) (addrList, error) {
+	host, port, err := parseHostPort(network, address)
+	if err != nil {
+		return nil, err
 	}
-	ctor := func(ips ...net.IP) AddrList {
+	var zone string
+	ctor := func(ips ...net.IP) addrList {
 		switch network {
 		case "tcp", "tcp4", "tcp6":
-			addrs := make(tcpAddrs, len(ips))
+			addrs := make(tcpList, len(ips))
 			for i, ip := range ips {
-				addrs[i] = &net.TCPAddr{IP: ip, Port: portnum, Zone: zone}
+				addrs[i] = &net.TCPAddr{IP: ip, Port: port, Zone: zone}
 			}
 			return addrs
 		case "udp", "udp4", "udp6":
-			addrs := make(udpAddrs, len(ips))
+			addrs := make(udpList, len(ips))
 			for i, ip := range ips {
-				addrs[i] = &net.UDPAddr{IP: ip, Port: portnum, Zone: zone}
+				addrs[i] = &net.UDPAddr{IP: ip, Port: port, Zone: zone}
 			}
 			return addrs
 		case "ip", "ip4", "ip6":
-			addrs := make(ipAddrs, len(ips))
+			addrs := make(ipList, len(ips))
 			for i, ip := range ips {
 				addrs[i] = &net.IPAddr{IP: ip, Zone: zone}
 			}
@@ -270,66 +207,34 @@ func resolveInternetAddrs(network, address string) (AddrList, error) {
 	if host == "" {
 		return ctor(nil), nil
 	}
+	var ips []net.IP
 	// Try as a literal IP address.
-	var ip net.IP
-	if ip = parseIPv4(host); ip != nil {
-		return ctor(ip), nil
+	if ip := parseIPv4(host); ip != nil {
+		ips = []net.IP{ip}
+	} else if ip, zone = parseIPv6(host, true); ip != nil {
+		ips = []net.IP{ip}
+	} else {
+		// Try as a DNS name.
+		host, zone = splitHostZone(host)
+		ips, err = resolver.Resolve(host)
+		if err != nil {
+			return nil, err
+		}
 	}
-	if ip, zone = parseIPv6(host, true); ip != nil {
-		return ctor(ip), nil
+	supported := SupportedIP
+	if network[len(network)-1] == '4' {
+		supported = ipv4only
+	} else if network[len(network)-1] == '6' || zone != "" {
+		supported = ipv6only
 	}
-	// Try as a DNS name.
-	host, zone = splitHostZone(host)
-	ips, err := net.LookupIP(host)
-	if err != nil {
-		return nil, err
+	ips = filterIPs(supported, ips)
+	if filter != nil {
+		ips = filter(ips)
 	}
-	filter := SupportedIP
-	if network != "" && network[len(network)-1] == '4' {
-		filter = ipv4only
-	}
-	if network != "" && network[len(network)-1] == '6' || zone != "" {
-		filter = ipv6only
-	}
-	ips = filterIPs(filter, ips)
 	if len(ips) == 0 {
 		return nil, errNoSuitableAddress
 	}
 	return ctor(ips...), nil
-}
-
-// filterIPs returns the non-nil results of filter applied to ips.
-// It is processed in-place: the contents of ips is not preserved
-// and the result is sliced from its backing array.
-func filterIPs(filter func(net.IP) net.IP, ips []net.IP) []net.IP {
-	n := 0
-	for i := range ips {
-		if ip := filter(ips[i]); ip != nil {
-			ips[n] = ip
-			n++
-		}
-	}
-	return ips[:n]
-}
-
-// ipv4only returns IPv4 addresses that we can use with the kernel's
-// IPv4 addressing modes. If ip is an IPv4 address, ipv4only returns ip.
-// Otherwise it returns nil.
-func ipv4only(ip net.IP) net.IP {
-	if supportsIPv4 {
-		return ip.To4()
-	}
-	return nil
-}
-
-// ipv6only returns IPv6 addresses that we can use with the kernel's
-// IPv6 addressing modes.  It returns IPv4-mapped IPv6 addresses as
-// nils and returns other IPv6 address types as IPv6 addresses.
-func ipv6only(ip net.IP) net.IP {
-	if supportsIPv6 && len(ip) == net.IPv6len && ip.To4() == nil {
-		return ip
-	}
-	return nil
 }
 
 func parseNetwork(network string) (string, error) {
@@ -352,6 +257,26 @@ func parseNetwork(network string) (string, error) {
 		return nett, nil
 	}
 	return "", net.UnknownNetworkError(network)
+}
+
+func parseHostPort(network, address string) (host string, port int, err error) {
+	if address == "" {
+		err = errMissingAddress
+		return
+	}
+	switch network {
+	case "tcp", "tcp4", "tcp6", "udp", "udp4", "udp6":
+		var portstr string
+		if host, portstr, err = net.SplitHostPort(address); err != nil {
+			return
+		}
+		port, err = parsePort(network, portstr)
+	case "ip", "ip4", "ip6":
+		host = address
+	default:
+		err = net.UnknownNetworkError(network)
+	}
+	return
 }
 
 // parsePort parses port as a network service port number for both
@@ -521,8 +446,36 @@ func splitHostZone(s string) (host, zone string) {
 	return
 }
 
-type timeoutError struct{}
+// filterIPs returns the non-nil results of filter applied to ips.
+// It is processed in-place: the contents of ips is not preserved
+// and the result is sliced from its backing array.
+func filterIPs(filter func(net.IP) net.IP, ips []net.IP) []net.IP {
+	n := 0
+	for i := range ips {
+		if ip := filter(ips[i]); ip != nil {
+			ips[n] = ip
+			n++
+		}
+	}
+	return ips[:n]
+}
 
-func (e *timeoutError) Error() string   { return "i/o timeout" }
-func (e *timeoutError) Timeout() bool   { return true }
-func (e *timeoutError) Temporary() bool { return true }
+// ipv4only returns IPv4 addresses that we can use with the kernel's
+// IPv4 addressing modes. If ip is an IPv4 address, ipv4only returns ip.
+// Otherwise it returns nil.
+func ipv4only(ip net.IP) net.IP {
+	if supportsIPv4 {
+		return ip.To4()
+	}
+	return nil
+}
+
+// ipv6only returns IPv6 addresses that we can use with the kernel's
+// IPv6 addressing modes.  It returns IPv4-mapped IPv6 addresses as
+// nils and returns other IPv6 address types as IPv6 addresses.
+func ipv6only(ip net.IP) net.IP {
+	if supportsIPv6 && len(ip) == net.IPv6len && ip.To4() == nil {
+		return ip
+	}
+	return nil
+}

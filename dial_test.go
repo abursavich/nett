@@ -4,19 +4,32 @@
 
 package nett
 
-import "testing"
+import (
+	"bytes"
+	"io/ioutil"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
 
-func TestDialGoogleTCP(t *testing.T) {
-	if len(googleTCPAddrs) == 0 {
-		t.Skipf("google.com not found")
-	}
+func TestDialHTTP(t *testing.T) {
+	b := []byte{'O', 'K'}
+	h := func(w http.ResponseWriter, r *http.Request) { w.Write(b) }
+	s := httptest.NewServer(http.HandlerFunc(h))
+	defer s.Close()
+
 	var d Dialer
-	for _, ta := range googleTCPAddrs {
-		c, err := d.Dial(ta.net, ta.addr)
-		if err != nil {
-			t.Errorf("net: %s; addr: %s\nerror: %v\n", ta.net, ta.addr, err)
-			continue
-		}
-		c.Close()
+	c := http.Client{Transport: &http.Transport{Dial: d.Dial}}
+	resp, err := c.Get(s.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := ioutil.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(body, b) {
+		t.Fatal("response doesn't match")
 	}
 }

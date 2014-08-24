@@ -11,58 +11,79 @@ import (
 )
 
 type testAddr struct {
-	net, addr string
+	net, addr  string
+	ips        []net.IP
+	ipv4, ipv6 bool
+	err        error
 }
 
-var googleTCPAddrs, googleUDPAddrs []testAddr
+var testTCPAddrs, testUDPAddrs []testAddr
 
 func init() {
-	if _, err := net.ResolveTCPAddr("tcp", "google.com:80"); err != nil {
-		return
+	ipv4 := net.IP{127, 0, 0, 1}
+	ipv6 := net.IPv6loopback
+	ips := []net.IP{ipv4, ipv6}
+	testTCPAddrs = []testAddr{
+		{"tcp", "foo.com:http", ips, true, true, nil},
+		{"tcp", "foo.com:80", ips, true, true, nil},
+		{"tcp4", "foo.com:80", ips, true, false, nil},
+		{"tcp4", "foo.com:80", ips, false, true, errNoSuitableAddress},
+		{"tcp6", "foo.com:80", ips, false, true, nil},
+		{"tcp6", "foo.com:80", ips, true, false, errNoSuitableAddress},
 	}
-	googleTCPAddrs = []testAddr{
-		{"tcp", "google.com:http"},
-		{"tcp", "google.com:80"},
-	}
-	if supportsIPv4 {
-		googleTCPAddrs = append(googleTCPAddrs, testAddr{"tcp4", "google.com:80"})
-	}
-	if supportsIPv6 {
-		if _, err := net.ResolveTCPAddr("tcp6", "google.com:80"); err == nil {
-			googleTCPAddrs = append(googleTCPAddrs, testAddr{"tcp6", "google.com:80"})
-		}
-	}
-	googleUDPAddrs = make([]testAddr, len(googleTCPAddrs))
-	for i, ta := range googleTCPAddrs {
+	testUDPAddrs = make([]testAddr, len(testTCPAddrs))
+	for i, ta := range testTCPAddrs {
 		ta.net = strings.Replace(ta.net, "tcp", "udp", -1)
-		googleUDPAddrs[i] = ta
+		testUDPAddrs[i] = ta
 	}
 }
 
-func TestResolveGoogleTCP(t *testing.T) {
-	if len(googleTCPAddrs) == 0 {
-		t.Skipf("google.com not found")
+func TestResolveTCP(t *testing.T) {
+	defer func(fn func(string) ([]net.IP, error), ipv4, ipv6 bool) {
+		lookupIPs = fn
+		supportsIPv4 = ipv4
+		supportsIPv6 = ipv6
+	}(lookupIPs, supportsIPv4, supportsIPv6)
+	var ips []net.IP
+	lookupIPs = func(host string) ([]net.IP, error) {
+		clone := make([]net.IP, len(ips))
+		copy(clone, ips)
+		return clone, nil
 	}
-	for _, ta := range googleTCPAddrs {
-		addrs, err := ResolveTCPAddrs(ta.net, ta.addr)
-		if err != nil {
-			t.Errorf("net: %s; addr: %s\nerror: %v\n", ta.net, ta.addr, err)
-		} else if len(addrs) == 0 {
-			t.Errorf("net: %s; addr: %s\nno addresses\n", ta.net, ta.addr)
+	for i, ta := range testTCPAddrs {
+		ips = ta.ips
+		supportsIPv4 = ta.ipv4
+		supportsIPv6 = ta.ipv6
+		addrs, err := ResolveTCPAddrs(nil, nil, ta.net, ta.addr)
+		if err != ta.err {
+			t.Errorf("test %d: expecting error: %v\ngot: error: %v\n", i, ta.err, err)
+		} else if err == nil && len(addrs) == 0 {
+			t.Errorf("test %d: net: %s; addr: %s\nno addresses\n", i, ta.net, ta.addr)
 		}
 	}
 }
 
-func TestResolveGoogleUDP(t *testing.T) {
-	if len(googleUDPAddrs) == 0 {
-		t.Skipf("google.com not found")
+func TestResolveUDP(t *testing.T) {
+	defer func(fn func(string) ([]net.IP, error), ipv4, ipv6 bool) {
+		lookupIPs = fn
+		supportsIPv4 = ipv4
+		supportsIPv6 = ipv6
+	}(lookupIPs, supportsIPv4, supportsIPv6)
+	var ips []net.IP
+	lookupIPs = func(host string) ([]net.IP, error) {
+		clone := make([]net.IP, len(ips))
+		copy(clone, ips)
+		return clone, nil
 	}
-	for _, ta := range googleUDPAddrs {
-		addrs, err := ResolveUDPAddrs(ta.net, ta.addr)
-		if err != nil {
-			t.Errorf("net: %s; addr: %s\nerror: %v\n", ta.net, ta.addr, err)
-		} else if len(addrs) == 0 {
-			t.Errorf("net: %s; addr: %s\nno addresses\n", ta.net, ta.addr)
+	for _, ta := range testUDPAddrs {
+		ips = ta.ips
+		supportsIPv4 = ta.ipv4
+		supportsIPv6 = ta.ipv6
+		addrs, err := ResolveUDPAddrs(nil, nil, ta.net, ta.addr)
+		if err != ta.err {
+			t.Errorf("test: %#v\nexpecting error: %v\ngot error: %v\n", ta, ta.err, err)
+		} else if err == nil && len(addrs) == 0 {
+			t.Errorf("test: %#v\nnet: %s; addr: %s\nno addresses\n", ta, ta.net, ta.addr)
 		}
 	}
 }

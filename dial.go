@@ -9,9 +9,7 @@ import (
 	"time"
 )
 
-type NotifyDialer interface {
-	NotifyDial(network, address string, duration time.Duration, err error)
-}
+var errTimeout = error(&timeoutError{})
 
 type Dialer struct {
 	// Timeout is the maximum amount of time a dial will wait for
@@ -38,7 +36,13 @@ type Dialer struct {
 	// If nil, a local address is automatically chosen.
 	LocalAddr net.Addr
 
-	// Resolver is used to resolve addresses.
+	// Resolver is used to resolve IP addresses from hosts.
+	//
+	// If nil, DefaultResolver will be used.
+	Resolver Resolver
+
+	// Filter selects addresses from those available after
+	// resolving a host to a set of supported IPs.
 	//
 	// When dialing a TCP connection if multiple addresses are
 	// returned, then a connection will attempt to be established
@@ -46,11 +50,8 @@ type Dialer struct {
 	// With any other type of connection, only the first address
 	// returned will be dialed.
 	//
-	// If the Resolver also satifies NotifyDialer, it will be
-	// notified of the results of all dials.
-	//
-	// If nil, DefaultResolver will be used.
-	Resolver Resolver
+	// If nil, DefaultFilter is used.
+	Filter Filter
 
 	// KeepAlive specifies the keep-alive period for an active
 	// network connection.
@@ -107,12 +108,13 @@ func (d *Dialer) Dial(network, address string) (net.Conn, error) {
 	if resolver == nil {
 		resolver = defaultResolver
 	}
-	addrs, err := resolveAddrsDeadline(resolver, network, address, deadline)
+	filter := d.Filter
+	if filter == nil {
+		filter = DefaultFilter
+	}
+	addrs, err := resolveAddrsDeadline(resolver, filter, network, address, deadline)
 	if err != nil {
 		return nil, &net.OpError{Op: "dial", Net: network, Addr: nil, Err: err}
-	}
-	if addrs.Len() == 0 {
-		return nil, errNoSuitableAddress
 	}
 	dialer := net.Dialer{
 		Deadline:  deadline,
@@ -120,14 +122,14 @@ func (d *Dialer) Dial(network, address string) (net.Conn, error) {
 		KeepAlive: d.KeepAlive,
 	}
 	if addrs.Len() == 1 || len(network) < 3 || network[:3] != "tcp" {
-		return d.dialSingle(dialer, network, addrs.Addr(0))
+		return dialer.Dial(network, addrs.Addr(0))
 	}
-	return d.dialMulti(dialer, network, addrs)
+	return dialMulti(dialer, network, addrs)
 }
 
-func resolveAddrsDeadline(resolver Resolver, network, address string, deadline time.Time) (AddrList, error) {
+func resolveAddrsDeadline(resolver Resolver, filter Filter, network, address string, deadline time.Time) (addrList, error) {
 	if deadline.IsZero() {
-		return resolver.ResolveAddrs(network, address)
+		return resolveAddrList(resolver, filter, network, address)
 	}
 
 	timeout := deadline.Sub(time.Now())
@@ -137,36 +139,27 @@ func resolveAddrsDeadline(resolver Resolver, network, address string, deadline t
 	t := time.NewTimer(timeout)
 	defer t.Stop()
 	type res struct {
-		AddrList
+		addrList
 		error
 	}
 	resc := make(chan res, 1)
 	go func() {
-		addrs, err := resolver.ResolveAddrs(network, address)
+		addrs, err := resolveAddrList(resolver, filter, network, address)
 		resc <- res{addrs, err}
 	}()
 	select {
 	case <-t.C:
 		return nil, errTimeout
 	case r := <-resc:
-		return r.AddrList, r.error
+		return r.addrList, r.error
 	}
-}
-
-func (d *Dialer) dialSingle(dialer net.Dialer, network, address string) (net.Conn, error) {
-	s := time.Now()
-	c, err := dialer.Dial(network, address)
-	if nd, ok := d.Resolver.(NotifyDialer); ok {
-		nd.NotifyDial(network, address, time.Since(s), err)
-	}
-	return c, err
 }
 
 // dialMulti attempts to establish connections to each destination of
 // the list of addresses. It will return the first established
 // connection and close the other connections. Otherwise it returns
 // error on the last attempt.
-func (d *Dialer) dialMulti(dialer net.Dialer, network string, addrs AddrList) (net.Conn, error) {
+func dialMulti(dialer net.Dialer, network string, addrs addrList) (net.Conn, error) {
 	type racer struct {
 		net.Conn
 		error
@@ -179,7 +172,7 @@ func (d *Dialer) dialMulti(dialer net.Dialer, network string, addrs AddrList) (n
 	lane := make(chan racer, 1)
 	for i := 0; i < addrsLen; i++ {
 		go func(i int) {
-			c, err := d.dialSingle(dialer, network, addrs.Addr(i))
+			c, err := dialer.Dial(network, addrs.Addr(i))
 			if _, ok := <-sig; ok {
 				lane <- racer{c, err}
 			} else if err == nil {
@@ -203,3 +196,31 @@ func (d *Dialer) dialMulti(dialer net.Dialer, network string, addrs AddrList) (n
 	}
 	return nil, lastErr
 }
+
+type addrList interface {
+	Len() int
+	Addr(i int) string
+}
+
+type tcpList []*net.TCPAddr
+type udpList []*net.UDPAddr
+type ipList []*net.IPAddr
+type unixList []*net.UnixAddr
+
+func (list tcpList) Len() int          { return len(list) }
+func (list tcpList) Addr(i int) string { return list[i].String() }
+
+func (list udpList) Len() int          { return len(list) }
+func (list udpList) Addr(i int) string { return list[i].String() }
+
+func (list ipList) Len() int          { return len(list) }
+func (list ipList) Addr(i int) string { return list[i].String() }
+
+func (list unixList) Len() int          { return len(list) }
+func (list unixList) Addr(i int) string { return list[i].String() }
+
+type timeoutError struct{}
+
+func (e *timeoutError) Error() string   { return "i/o timeout" }
+func (e *timeoutError) Timeout() bool   { return true }
+func (e *timeoutError) Temporary() bool { return true }

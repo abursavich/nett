@@ -9,122 +9,55 @@ import (
 	"net"
 )
 
-// Filter selects addresses from addrs.
-type Filter func(addrs AddrList) AddrList
+// Filter selcts IP addresses from ips.
+type Filter func(ips []net.IP) []net.IP
 
-// AddrList provides a way to interact with an enumerated
-// collection of addresses.
-type AddrList interface {
-	// Len is the number of addresses in the collection.
-	Len() int
-	// Addr is the string form of the address at index i.
-	Addr(i int) string
-	// IP is the IP of the address at index i.
-	IP(i int) net.IP
-	// Append appends the address at index i to addrs,
-	// which must be of the same type or nil.
-	Append(addrs AddrList, i int) AddrList
-}
-
-type tcpAddrs []*net.TCPAddr
-type udpAddrs []*net.UDPAddr
-type ipAddrs []*net.IPAddr
-type unixAddrs []*net.UnixAddr
-
-func (a tcpAddrs) Len() int          { return len(a) }
-func (a tcpAddrs) Addr(i int) string { return a[i].String() }
-func (a tcpAddrs) IP(i int) net.IP   { return a[i].IP }
-func (a tcpAddrs) Append(addrs AddrList, i int) AddrList {
-	t, _ := addrs.(tcpAddrs)
-	return append(t, a[i])
-}
-
-func (a udpAddrs) Len() int          { return len(a) }
-func (a udpAddrs) Addr(i int) string { return a[i].String() }
-func (a udpAddrs) IP(i int) net.IP   { return a[i].IP }
-func (a udpAddrs) Append(addrs AddrList, i int) AddrList {
-	t, _ := addrs.(udpAddrs)
-	return append(t, a[i])
-}
-
-func (a ipAddrs) Len() int          { return len(a) }
-func (a ipAddrs) Addr(i int) string { return a[i].String() }
-func (a ipAddrs) IP(i int) net.IP   { return a[i].IP }
-func (a ipAddrs) Append(addrs AddrList, i int) AddrList {
-	t, _ := addrs.(ipAddrs)
-	return append(t, a[i])
-}
-
-func (a unixAddrs) Len() int          { return len(a) }
-func (a unixAddrs) Addr(i int) string { return a[i].String() }
-func (a unixAddrs) IP(i int) net.IP   { return nil }
-func (a unixAddrs) Append(addrs AddrList, i int) AddrList {
-	t, _ := addrs.(unixAddrs)
-	return append(t, a[i])
-}
-
-// DefaultFilter selects the first address IPv4 address
-// in addrs. If only IPv6 addresses exist in addrs, then it
-// selects the first IPv6 address.
-func DefaultFilter(addrs AddrList) AddrList {
-	if addrs == nil {
-		return nil
+// DefaultFilter selects the first IPv4 address in ips.
+// If only IPv6 addresses exist in ips, then it selects
+// the first IPv6 address.
+func DefaultFilter(ips []net.IP) []net.IP {
+	if len(ips) <= 1 {
+		return ips
 	}
-	addrsLen := addrs.Len()
-	if addrsLen <= 1 {
-		return addrs
-	}
-	ipv6 := -1
-	for i := 0; i < addrsLen; i++ {
-		if ipLen := len(addrs.IP(i)); ipLen == net.IPv4len {
-			return addrs.Append(nil, i)
-		} else if ipv6 < 0 && ipLen == net.IPv6len {
-			ipv6 = i
+	var ipv6 net.IP
+	for _, ip := range ips {
+		if ipLen := len(ip); ipLen == net.IPv4len {
+			return []net.IP{ip}
+		} else if ipv6 == nil && ipLen == net.IPv6len {
+			ipv6 = ip
 		}
 	}
-	if ipv6 == -1 {
+	if ipv6 == nil {
 		return nil // shouldn't ever happen
 	}
-	return addrs.Append(nil, ipv6)
+	return []net.IP{ipv6}
 }
 
-// NoFilter selects all addresses in addrs.
-func NoFilter(addrs AddrList) AddrList {
-	return addrs
-}
-
-// FirstFilter selects the first address in addrs.
-func FirstFilter(addrs AddrList) AddrList {
-	if addrs == nil {
-		return nil
+// FirstFilter selects the first address in ips.
+func FirstFilter(ips []net.IP) []net.IP {
+	if len(ips) <= 1 {
+		return ips
 	}
-	addrsLen := addrs.Len()
-	if addrsLen <= 1 {
-		return addrs
-	}
-	return addrs.Append(nil, 0)
+	return []net.IP{ips[0]}
 }
 
 // FirstEachFilter selects the first IPv4 address
-// and IPv6 address in addrs.
-func FirstEachFilter(addrs AddrList) AddrList {
-	if addrs == nil {
-		return nil
-	}
-	addrsLen := addrs.Len()
-	if addrsLen <= 1 {
-		return addrs
+// and IPv6 address in ips.
+func FirstEachFilter(ips []net.IP) []net.IP {
+	k := len(ips)
+	if k <= 1 {
+		return ips
 	}
 	var (
 		ipv4, ipv6 bool
-		a          AddrList
+		a          []net.IP
 	)
-	for i := 0; i < addrsLen; i++ {
-		if ipLen := len(addrs.IP(i)); !ipv4 && ipLen == net.IPv4len {
-			a = addrs.Append(a, i)
+	for _, ip := range ips {
+		if ipLen := len(ip); !ipv4 && ipLen == net.IPv4len {
+			a = append(a, ip)
 			ipv4 = true
 		} else if !ipv6 && ipLen == net.IPv6len {
-			a = addrs.Append(a, i)
+			a = append(a, ip)
 			ipv6 = true
 		}
 		if ipv4 && ipv6 {
@@ -134,59 +67,43 @@ func FirstEachFilter(addrs AddrList) AddrList {
 	return a
 }
 
-// FirstIPv4Filter selects the first IPv4 address in addrs.
-func FirstIPv4Filter(addrs AddrList) AddrList {
-	if addrs == nil {
-		return nil
-	}
-	addrsLen := addrs.Len()
-	for i := 0; i < addrsLen; i++ {
-		if len(addrs.IP(i)) == net.IPv4len {
-			return addrs.Append(nil, i)
+// FirstIPv4Filter selects the first IPv4 address in ips.
+func FirstIPv4Filter(ips []net.IP) []net.IP {
+	for _, ip := range ips {
+		if len(ip) == net.IPv4len {
+			return []net.IP{ip}
 		}
 	}
 	return nil
 }
 
-// FirstIPv6Filter selects the first IPv6 address in addrs.
-func FirstIPv6Filter(addrs AddrList) AddrList {
-	if addrs == nil {
-		return nil
-	}
-	addrsLen := addrs.Len()
-	for i := 0; i < addrsLen; i++ {
-		if len(addrs.IP(i)) == net.IPv6len {
-			return addrs.Append(nil, i)
+// FirstIPv6Filter selects the first IPv6 address in ips.
+func FirstIPv6Filter(ips []net.IP) []net.IP {
+	for _, ip := range ips {
+		if len(ip) == net.IPv6len {
+			return []net.IP{ip}
 		}
 	}
 	return nil
 }
 
-// IPv4Filter selects all IPv4 addresses in addrs.
-func IPv4Filter(addrs AddrList) AddrList {
-	if addrs == nil {
-		return nil
-	}
-	var a AddrList
-	addrsLen := addrs.Len()
-	for i := 0; i < addrsLen; i++ {
-		if len(addrs.IP(i)) == net.IPv4len {
-			a = addrs.Append(a, i)
+// IPv4Filter selects all IPv4 addresses in ips.
+func IPv4Filter(ips []net.IP) []net.IP {
+	var a []net.IP
+	for _, ip := range ips {
+		if len(ip) == net.IPv4len {
+			a = append(a, ip)
 		}
 	}
 	return a
 }
 
-// IPv6Filter selects all IPv6 addresses in addrs.
-func IPv6Filter(addrs AddrList) AddrList {
-	if addrs == nil {
-		return nil
-	}
-	var a AddrList
-	addrsLen := addrs.Len()
-	for i := 0; i < addrsLen; i++ {
-		if len(addrs.IP(i)) == net.IPv6len {
-			a = addrs.Append(a, i)
+// IPv6Filter selects all IPv6 addresses in ips.
+func IPv6Filter(ips []net.IP) []net.IP {
+	var a []net.IP
+	for _, ip := range ips {
+		if len(ip) == net.IPv6len {
+			a = append(a, ip)
 		}
 	}
 	return a
@@ -199,17 +116,13 @@ func IPv6Filter(addrs AddrList) AddrList {
 // will be allowed to fill any extra space in the result.
 // Addresses toward the front of the collection are preferred.
 func MaxFilter(max int) Filter {
-	return func(addrs AddrList) AddrList {
-		if addrs == nil {
-			return nil
-		}
-		addrsLen := addrs.Len()
-		if addrsLen <= max {
-			return addrs
+	return func(ips []net.IP) []net.IP {
+		if len(ips) <= max {
+			return ips
 		}
 		var ipv4, ipv6 int
-		for i := 0; i < addrsLen; i++ {
-			if ipLen := len(addrs.IP(i)); ipLen == net.IPv4len {
+		for _, ip := range ips {
+			if ipLen := len(ip); ipLen == net.IPv4len {
 				ipv4++
 			} else if ipLen == net.IPv6len {
 				ipv6++
@@ -223,50 +136,35 @@ func MaxFilter(max int) Filter {
 			ipv4 = max - halfLen // give rounding benefit to ipv4
 			ipv6 = halfLen
 		}
-		var a AddrList
-		for i := 0; i < addrsLen; i++ {
-			if ipLen := len(addrs.IP(i)); ipv4 > 0 && ipLen == net.IPv4len {
-				a = addrs.Append(a, i)
+		var a []net.IP
+		for _, ip := range ips {
+			if ipLen := len(ip); ipv4 > 0 && ipLen == net.IPv4len {
+				a = append(a, ip)
 				ipv4--
 			} else if ipv6 > 0 && ipLen == net.IPv6len {
-				a = addrs.Append(a, i)
+				a = append(a, ip)
 				ipv6--
+			}
+			if ipv4 == 0 && ipv6 == 0 {
+				break
 			}
 		}
 		return a
 	}
 }
 
-// ReverseFilter selects all addresses in addrs
-// in reverse order.
-func ReverseFilter(addrs AddrList) AddrList {
-	if addrs == nil {
-		return nil
-	}
-	addrsLen := addrs.Len()
-	if addrsLen <= 1 {
-		return addrs
-	}
-	var a AddrList
-	for i := addrsLen - 1; i >= 0; i-- {
-		a = addrs.Append(a, i)
-	}
-	return a
-}
-
-// ShuffleFilter selects all addresses in addrs
+// ShuffleFilter selects all addresses in ips
 // in random order.
-func ShuffleFilter(addrs AddrList) AddrList {
-	if addrs == nil {
-		return nil
+func ShuffleFilter(ips []net.IP) []net.IP {
+	k := len(ips)
+	if k <= 1 {
+		return ips
 	}
-	addrsLen := addrs.Len()
-	if addrsLen <= 1 {
-		return addrs
-	}
-	var a AddrList
-	for _, i := range rand.Perm(addrsLen) {
-		a = addrs.Append(a, i)
+	a := make([]net.IP, k)
+	n := 0
+	for _, i := range rand.Perm(k) {
+		a[n] = ips[i]
+		n++
 	}
 	return a
 }
@@ -280,10 +178,10 @@ func ShuffleFilter(addrs AddrList) AddrList {
 //	// equivalent to FirstIPv4Filter
 //	ComposeFilters(IPv4Filter, FirstFilter)
 func ComposeFilters(filters ...Filter) Filter {
-	return func(addrs AddrList) AddrList {
+	return func(ips []net.IP) []net.IP {
 		for _, filter := range filters {
-			addrs = filter(addrs)
+			ips = filter(ips)
 		}
-		return addrs
+		return ips
 	}
 }
