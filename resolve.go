@@ -54,7 +54,7 @@ type CacheResolver struct {
 	// If TTL is zero, cached hosts do not expire.
 	TTL time.Duration
 
-	mu    sync.Mutex
+	mu    sync.RWMutex
 	cache map[string]*cacheItem
 }
 
@@ -78,17 +78,16 @@ func NewCacheResolver(resolver Resolver, ttl time.Duration) *CacheResolver {
 // used to look up the hosts IPs. Successful results are added
 // to the cache.
 func (r *CacheResolver) Resolve(host string) ([]net.IP, error) {
-	r.mu.Lock()
+	r.mu.RLock()
 	if item, ok := r.cache[host]; ok {
 		if item.ttl.IsZero() || timeNow().Before(item.ttl) {
-			r.mu.Unlock()
+			r.mu.RUnlock()
 			ips := make([]net.IP, len(item.ips))
 			copy(ips, item.ips)
 			return ips, nil
 		}
-		delete(r.cache, host)
 	}
-	r.mu.Unlock()
+	r.mu.RUnlock()
 
 	resolver := r.Resolver
 	if resolver == nil {
@@ -103,11 +102,11 @@ func (r *CacheResolver) Resolve(host string) ([]net.IP, error) {
 	if r.TTL > 0 {
 		ttl = timeNow().Add(r.TTL)
 	}
+	item := &cacheItem{ips, ttl}
 	r.mu.Lock()
 	if r.cache == nil {
 		r.cache = make(map[string]*cacheItem)
 	}
-	item := &cacheItem{ips, ttl}
 	r.cache[host] = item
 	r.mu.Unlock()
 
