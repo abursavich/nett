@@ -5,7 +5,7 @@ Package nett steals from the standard library's net package and attempts to prov
 
 **EXPERIMENTAL**: API subject to change.
 
-[![GoDoc](https://godoc.org/github.com/abursavich/nett?status.svg)](https://godoc.org/github.com/abursavich/nett)
+[![GoDoc](https://godoc.org/github.com/abursavich/nett?status.svg)](https://godoc.org/github.com/abursavich/nett) [![Build Status](https://travis-ci.org/abursavich/nett.svg?branch=master)](https://travis-ci.org/abursavich/nett)
 
 ```Go
 dialer := nett.Dialer{
