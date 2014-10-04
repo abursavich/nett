@@ -285,7 +285,11 @@ func parseNetwork(network string) (string, error) {
 	nett := network[:i]
 	switch nett {
 	case "ip", "ip4", "ip6":
-		// don't bother validating the proto
+		// Don't bother validating the protocol. The consequence of this is that
+		// an invalid protocol will fail at dial-time instead of resolve-time.
+		// A case might be made for doing it here like the net package does,
+		// but the cost of duplicating that logic from the standard library
+		// doesn't currently seem justified.
 		return nett, nil
 	}
 	return "", net.UnknownNetworkError(network)

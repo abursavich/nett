@@ -110,12 +110,11 @@ func (d *Dialer) deadline() time.Time {
 // For Unix networks, the address must be a file system path.
 func (d *Dialer) Dial(network, address string) (net.Conn, error) {
 	deadline := d.deadline()
-	resolver := d.Resolver
 	filter := d.IPFilter
 	if filter == nil {
 		filter = DefaultIPFilter
 	}
-	addrs, err := resolveAddrsDeadline(resolver, filter, network, address, deadline)
+	addrs, err := resolveAddrsDeadline(d.Resolver, filter, network, address, deadline)
 	if err != nil {
 		return nil, &net.OpError{Op: "dial", Net: network, Addr: nil, Err: err}
 	}
