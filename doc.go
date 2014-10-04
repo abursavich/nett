@@ -7,5 +7,6 @@
 //
 // EXPERIMENTAL
 //
-// API subject to change.
+// There are no plans to break the API, but it should be considered unstable
+// for the time being.
 package nett

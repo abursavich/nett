@@ -3,7 +3,7 @@ nett
 
 Package nett steals from the standard library's net package and attempts to provide additional useful features.
 
-**EXPERIMENTAL**: API subject to change.
+**EXPERIMENTAL**: There are no plans to break the API, but it should be considered unstable for the time being.
 
 [![GoDoc](https://godoc.org/github.com/abursavich/nett?status.svg)](https://godoc.org/github.com/abursavich/nett) [![Build Status](https://travis-ci.org/abursavich/nett.svg?branch=master)](https://travis-ci.org/abursavich/nett)
 
@@ -16,7 +16,7 @@ dialer := nett.Dialer{
     // dial two concurrently splitting between
     // IPv4 and IPv6 addresses and return the
     // connection that is established first.
-    Filter: nett.MaxFilter(2),
+    IPFilter: nett.MaxIPFilter(2),
     // Give up on dial after five seconds including
     // DNS resolution.
     Timeout: 5 * time.Second,
