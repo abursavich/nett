@@ -83,7 +83,7 @@ func TestDialMulti(t *testing.T) {
 }
 
 func Example() {
-	dialer := Dialer{
+	dialer := &Dialer{
 		// Cache successful DNS lookups for five minutes
 		// using DefaultResolver to fill the cache.
 		Resolver: NewCacheResolver(nil, 5*time.Minute),
@@ -92,11 +92,10 @@ func Example() {
 		// IPv4 and IPv6 addresses and return the
 		// connection that is established first.
 		IPFilter: MaxIPFilter(2),
-		// Give up on dial after 5 seconds including
-		// DNS resolution.
+		// Give up after 5 seconds including DNS resolution.
 		Timeout: 5 * time.Second,
 	}
-	client := http.Client{
+	client := &http.Client{
 		Transport: &http.Transport{
 			// Use the Dialer.
 			Dial: dialer.Dial,
