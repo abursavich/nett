@@ -125,7 +125,7 @@ func (r *CacheResolver) Resolve(host string) ([]net.IP, error) {
 // supported IP addresses. If resolver is nil, DefaultResolver is used.
 //
 // If filter is non-nil, resolved IP addresses are selected by applying it.
-func ResolveTCPAddrs(resolver Resolver, filter Filter, network, address string) ([]*net.TCPAddr, error) {
+func ResolveTCPAddrs(resolver Resolver, filter IPFilter, network, address string) ([]*net.TCPAddr, error) {
 	switch network {
 	case "tcp", "tcp4", "tcp6":
 	default:
@@ -148,7 +148,7 @@ func ResolveTCPAddrs(resolver Resolver, filter Filter, network, address string) 
 // supported IP addresses. If resolver is nil, DefaultResolver is used.
 //
 // If filter is non-nil, resolved IP addresses are selected by applying it.
-func ResolveUDPAddrs(resolver Resolver, filter Filter, network, address string) ([]*net.UDPAddr, error) {
+func ResolveUDPAddrs(resolver Resolver, filter IPFilter, network, address string) ([]*net.UDPAddr, error) {
 	switch network {
 	case "udp", "udp4", "udp6":
 	default:
@@ -169,7 +169,7 @@ func ResolveUDPAddrs(resolver Resolver, filter Filter, network, address string) 
 // supported IP addresses. If resolver is nil, DefaultResolver is used.
 //
 // If filter is non-nil, resolved IP addresses are selected by applying it.
-func ResolveIPAddrs(resolver Resolver, filter Filter, network, address string) ([]*net.IPAddr, error) {
+func ResolveIPAddrs(resolver Resolver, filter IPFilter, network, address string) ([]*net.IPAddr, error) {
 	nett, err := parseNetwork(network)
 	if err != nil {
 		return nil, err
@@ -186,7 +186,7 @@ func ResolveIPAddrs(resolver Resolver, filter Filter, network, address string) (
 	return addrs.(ipList), nil
 }
 
-func resolveAddrList(resolver Resolver, filter Filter, network, address string) (addrList, error) {
+func resolveAddrList(resolver Resolver, filter IPFilter, network, address string) (addrList, error) {
 	nett, err := parseNetwork(network)
 	if err != nil {
 		return nil, err
@@ -201,7 +201,7 @@ func resolveAddrList(resolver Resolver, filter Filter, network, address string) 
 	return resolveInternetAddrList(resolver, filter, nett, address)
 }
 
-func resolveInternetAddrList(resolver Resolver, filter Filter, network, address string) (addrList, error) {
+func resolveInternetAddrList(resolver Resolver, filter IPFilter, network, address string) (addrList, error) {
 	host, port, err := parseHostPort(network, address)
 	if err != nil {
 		return nil, err

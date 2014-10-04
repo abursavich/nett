@@ -67,7 +67,7 @@ func TestDialMulti(t *testing.T) {
 		t.Fatalf("dualStackServer.buildup failed: %v", err)
 	}
 
-	d := &Dialer{Filter: NoFilter} // dial all addresses
+	d := &Dialer{IPFilter: NoIPFilter} // dial all addresses
 	for _ = range dss.lns {
 		if c, err := d.Dial("tcp", "localhost:"+dss.port); err != nil {
 			t.Errorf("Dial failed: %v", err)
@@ -91,7 +91,7 @@ func Example() {
 		// dial two concurrently splitting between
 		// IPv4 and IPv6 addresses and return the
 		// connection that is established first.
-		Filter: MaxFilter(2),
+		IPFilter: MaxIPFilter(2),
 		// Give up on dial after 5 seconds including
 		// DNS resolution.
 		Timeout: 5 * time.Second,

@@ -11,8 +11,8 @@ import (
 
 var errTimeout = error(&timeoutError{})
 
-// Filter selcts IP addresses from ips.
-type Filter func(ips []net.IP) []net.IP
+// IPFilter selects IP addresses from ips.
+type IPFilter func(ips []net.IP) []net.IP
 
 // A Dialer contains options for connecting to an address.
 type Dialer struct {
@@ -45,7 +45,7 @@ type Dialer struct {
 	// If nil, DefaultResolver will be used.
 	Resolver Resolver
 
-	// Filter selects addresses from those available after
+	// IPFilter selects addresses from those available after
 	// resolving a host to a set of supported IPs.
 	//
 	// When dialing a TCP connection if multiple addresses are
@@ -54,8 +54,8 @@ type Dialer struct {
 	// With any other type of connection, only the first address
 	// returned will be dialed.
 	//
-	// If nil, DefaultFilter is used.
-	Filter Filter
+	// If nil, DefaultIPFilter is used.
+	IPFilter IPFilter
 
 	// KeepAlive specifies the keep-alive period for an active
 	// network connection.
@@ -111,9 +111,9 @@ func (d *Dialer) deadline() time.Time {
 func (d *Dialer) Dial(network, address string) (net.Conn, error) {
 	deadline := d.deadline()
 	resolver := d.Resolver
-	filter := d.Filter
+	filter := d.IPFilter
 	if filter == nil {
-		filter = DefaultFilter
+		filter = DefaultIPFilter
 	}
 	addrs, err := resolveAddrsDeadline(resolver, filter, network, address, deadline)
 	if err != nil {
@@ -126,7 +126,7 @@ func (d *Dialer) Dial(network, address string) (net.Conn, error) {
 	return dialMulti(dialer, network, addrs)
 }
 
-func resolveAddrsDeadline(resolver Resolver, filter Filter, network, address string, deadline time.Time) (addrList, error) {
+func resolveAddrsDeadline(resolver Resolver, filter IPFilter, network, address string, deadline time.Time) (addrList, error) {
 	if deadline.IsZero() {
 		return resolveAddrList(resolver, filter, network, address)
 	}
@@ -196,10 +196,10 @@ func dialMulti(dialer net.Dialer, network string, addrs addrList) (net.Conn, err
 	return nil, lastErr
 }
 
-// DefaultFilter selects the first IPv4 address in ips.
+// DefaultIPFilter selects the first IPv4 address in ips.
 // If only IPv6 addresses exist in ips, then it selects
 // the first IPv6 address.
-func DefaultFilter(ips []net.IP) []net.IP {
+func DefaultIPFilter(ips []net.IP) []net.IP {
 	if len(ips) <= 1 {
 		return ips
 	}
@@ -217,9 +217,9 @@ func DefaultFilter(ips []net.IP) []net.IP {
 	return []net.IP{ipv6}
 }
 
-// DualStackFilter selects the first IPv4 address
+// DualStackIPFilter selects the first IPv4 address
 // and IPv6 address in ips.
-func DualStackFilter(ips []net.IP) []net.IP {
+func DualStackIPFilter(ips []net.IP) []net.IP {
 	k := len(ips)
 	if k <= 1 {
 		return ips
@@ -243,18 +243,18 @@ func DualStackFilter(ips []net.IP) []net.IP {
 	return a
 }
 
-// NoFilter selects all IP addresses.
-func NoFilter(ips []net.IP) []net.IP {
+// NoIPFilter selects all IP addresses.
+func NoIPFilter(ips []net.IP) []net.IP {
 	return ips
 }
 
-// MaxFilter returns a Filter that selects up to max addresses.
+// MaxIPFilter returns a IPFilter that selects up to max addresses.
 // It will split the results evenly between availabe IPv4 and
 // IPv6 addresses. If one type of address doesn't exist in
 // sufficient quantity to consume its share, the other type
 // will be allowed to fill any extra space in the result.
 // Addresses toward the front of the collection are preferred.
-func MaxFilter(max int) Filter {
+func MaxIPFilter(max int) IPFilter {
 	return func(ips []net.IP) []net.IP {
 		if len(ips) <= max {
 			return ips
