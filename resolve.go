@@ -17,9 +17,8 @@ var (
 	errMissingHost       = errors.New("missing host")
 	errNoSuitableAddress = errors.New("no suitable address found")
 
-	defaultResolver = &DefaultResolver{}
-	lookupIPs       = net.LookupIP // used by tests
-	timeNow         = time.Now     // used by tests
+	lookupIPs = net.LookupIP // used by tests
+	timeNow   = time.Now     // used by tests
 )
 
 // Resolver is an interface representing the ability to lookup the
@@ -38,7 +37,7 @@ type DefaultResolver struct{}
 
 // Resolve looks up host using the local resolver.
 // It returns a slice of that host's IPv4 and IPv6 addresses.
-func (r *DefaultResolver) Resolve(host string) ([]net.IP, error) {
+func (DefaultResolver) Resolve(host string) ([]net.IP, error) {
 	if host == "" {
 		return nil, errMissingHost
 	}
@@ -91,7 +90,7 @@ func (r *CacheResolver) Resolve(host string) ([]net.IP, error) {
 
 	resolver := r.Resolver
 	if resolver == nil {
-		resolver = defaultResolver
+		resolver = DefaultResolver{}
 	}
 	ips, err := resolver.Resolve(host)
 	if err != nil {
@@ -247,7 +246,7 @@ func resolveInternetAddrList(resolver Resolver, filter IPFilter, network, addres
 			return nil, errInvalidAddress
 		}
 		if resolver == nil {
-			resolver = defaultResolver
+			resolver = DefaultResolver{}
 		}
 		ips, err = resolver.Resolve(host)
 		if err != nil {
