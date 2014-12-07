@@ -31,13 +31,14 @@ type Resolver interface {
 	Resolve(domain string) ([]net.IP, error)
 }
 
-// DefaultResolver looks up the IP addresses of a host using the local
-// resolver.
-type DefaultResolver struct{}
+// DefaultResolver is the default Resolver.
+var DefaultResolver Resolver = defaultResolver{}
+
+type defaultResolver struct{}
 
 // Resolve looks up host using the local resolver.
 // It returns a slice of that host's IPv4 and IPv6 addresses.
-func (DefaultResolver) Resolve(host string) ([]net.IP, error) {
+func (defaultResolver) Resolve(host string) ([]net.IP, error) {
 	if host == "" {
 		return nil, errMissingHost
 	}
@@ -90,7 +91,7 @@ func (r *CacheResolver) Resolve(host string) ([]net.IP, error) {
 
 	resolver := r.Resolver
 	if resolver == nil {
-		resolver = DefaultResolver{}
+		resolver = DefaultResolver
 	}
 	ips, err := resolver.Resolve(host)
 	if err != nil {
@@ -246,7 +247,7 @@ func resolveInternetAddrList(resolver Resolver, filter IPFilter, network, addres
 			return nil, errInvalidAddress
 		}
 		if resolver == nil {
-			resolver = DefaultResolver{}
+			resolver = DefaultResolver
 		}
 		ips, err = resolver.Resolve(host)
 		if err != nil {

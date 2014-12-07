@@ -168,29 +168,7 @@ to the cache.
 
 
 
-## type DefaultResolver
-``` go
-type DefaultResolver struct{}
-```
-DefaultResolver looks up the IP addresses of a host using the local
-resolver.
 
-
-
-
-
-
-
-
-
-
-
-### func (DefaultResolver) Resolve
-``` go
-func (DefaultResolver) Resolve(host string) ([]net.IP, error)
-```
-Resolve looks up host using the local resolver.
-It returns a slice of that host's IPv4 and IPv6 addresses.
 
 
 
@@ -344,8 +322,10 @@ A Resolver must be safe for concurrent use by multiple goroutines.
 
 
 
-
-
+``` go
+var DefaultResolver Resolver = defaultResolver{}
+```
+DefaultResolver is the default Resolver.
 
 
 
