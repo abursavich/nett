@@ -2,27 +2,21 @@
     import "github.com/abursavich/nett"
 
 Package nett steals from the standard library's net package
-and attempts to provide additional useful features. The primary
-motivation was to provide a dialer with a pluggable host resolver.
+and provides a dialer with a pluggable host resolver.
 
-### EXPERIMENTAL
-There are no plans to break the API, but it should be considered unstable
-for the time being.
 
-Example:
+### Example:
 
 ``` go
 dialer := &nett.Dialer{
     // Cache successful DNS lookups for five minutes
-    // using nett.DefaultResolver to fill the cache.
-    Resolver: nett.NewCacheResolver(nil, 5*time.Minute),
-    // If host resolves to multiple IP addresses,
-    // dial two concurrently splitting between
-    // IPv4 and IPv6 addresses and return the
-    // connection that is established first.
-    IPFilter: nett.MaxIPFilter(2),
-    // Give up after 5 seconds including DNS resolution.
-    Timeout: 5 * time.Second,
+    // using DefaultResolver to fill the cache.
+    Resolver: &nett.CacheResolver{TTL: 5 * time.Minute},
+    // Concurrently dial an IPv4 and an IPv6 address and
+    // return the connection that is established first.
+    IPFilter: nett.DualStack,
+    // Give up after ten seconds including DNS resolution.
+    Timeout: 10 * time.Second,
 }
 client := &http.Client{
     Transport: &http.Transport{
@@ -47,82 +41,20 @@ for _, url := range urls {
 
 
 
-## func DefaultIPFilter
+## func DefaultIP
 ``` go
-func DefaultIPFilter(ips []net.IP) []net.IP
+func DefaultIP(ips []net.IP) []net.IP
 ```
-DefaultIPFilter selects the first IPv4 address in ips.
-If only IPv6 addresses exist in ips, then it selects
-the first IPv6 address.
+DefaultIP selects the first address in ips,
+preferring IPv4 addresses over IPv6 addresses.
 
 
-## func DualStackIPFilter
+## func DualStack
 ``` go
-func DualStackIPFilter(ips []net.IP) []net.IP
+func DualStack(ips []net.IP) []net.IP
 ```
-DualStackIPFilter selects the first IPv4 address
+DualStack selects the first IPv4 address
 and IPv6 address in ips.
-
-
-## func NoIPFilter
-``` go
-func NoIPFilter(ips []net.IP) []net.IP
-```
-NoIPFilter selects all IP addresses.
-
-
-## func ResolveIPAddrs
-``` go
-func ResolveIPAddrs(resolver Resolver, filter IPFilter, network, address string) ([]*net.IPAddr, error)
-```
-ResolveIPAddrs parses address of the form "host" or "ipv6-host%zone" and
-resolves a list of IP addresses on the network, which must be "ip", "ip4"
-or "ip6".
-
-If host is a domain name, resolver is used to resolve a list of platform
-supported IP addresses. If resolver is nil, DefaultResolver is used.
-
-If filter is non-nil, resolved IP addresses are selected by applying it.
-
-
-## func ResolveTCPAddrs
-``` go
-func ResolveTCPAddrs(resolver Resolver, filter IPFilter, network, address string) ([]*net.TCPAddr, error)
-```
-ResolveTCPAddrs parses address of the form "host:port" or
-"[ipv6-host%zone]:port" and resolves a list of TCP addresses on the
-network, which must be "tcp", "tcp4" or "tcp6". A literal address or
-host name for IPv6 must be enclosed in square brackets, as in "[::1]:80",
-"[ipv6-host]:http" or "[ipv6-host%zone]:80".
-
-If host is a domain name, resolver is used to resolve a list of platform
-supported IP addresses. If resolver is nil, DefaultResolver is used.
-
-If filter is non-nil, resolved IP addresses are selected by applying it.
-
-
-## func ResolveUDPAddrs
-``` go
-func ResolveUDPAddrs(resolver Resolver, filter IPFilter, network, address string) ([]*net.UDPAddr, error)
-```
-ResolveUDPAddrs parses address of the form "host:port" or
-"[ipv6-host%zone]:port" and resolves a list of UDP addresses on the
-network, which must be "udp", "udp4" or "udp6". A literal address or
-host name for IPv6 must be enclosed in square brackets, as in "[::1]:80",
-"[ipv6-host]:http" or "[ipv6-host%zone]:80".
-
-If host is a domain name, resolver is used to resolve a list of platform
-supported IP addresses. If resolver is nil, DefaultResolver is used.
-
-If filter is non-nil, resolved IP addresses are selected by applying it.
-
-
-## func SupportedIP
-``` go
-func SupportedIP(ip net.IP) net.IP
-```
-SupportedIP returns a version of the IP that the platform
-supports. If it is not supported it returns nil.
 
 
 
@@ -138,7 +70,8 @@ type CacheResolver struct {
     // contains filtered or unexported fields
 }
 ```
-CacheResolver looks up the IP addresses of a host and caches results.
+CacheResolver looks up the IP addresses of a host
+and caches successful results.
 
 
 
@@ -146,14 +79,6 @@ CacheResolver looks up the IP addresses of a host and caches results.
 
 
 
-
-
-### func NewCacheResolver
-``` go
-func NewCacheResolver(resolver Resolver, ttl time.Duration) *CacheResolver
-```
-NewCacheResolver returns a new CacheResolver with the given
-resolver and ttl.
 
 
 
@@ -162,14 +87,7 @@ resolver and ttl.
 ``` go
 func (r *CacheResolver) Resolve(host string) ([]net.IP, error)
 ```
-Resolve looks up the IP addresses of a host in its cache.
-If not found in its cache, the CacheResolver's Resolver is
-used to look up the hosts IPs. Successful results are added
-to the cache.
-
-
-
-
+Resolve returns a host's IP addresses.
 
 
 
@@ -214,7 +132,7 @@ type Dialer struct {
     // With any other type of connection, only the first address
     // returned will be dialed.
     //
-    // If nil, DefaultIPFilter is used.
+    // If nil, DefaultIP is used.
     IPFilter IPFilter
 
     // KeepAlive specifies the keep-alive period for an active
@@ -292,25 +210,13 @@ IPFilter selects IP addresses from ips.
 
 
 
-### func MaxIPFilter
-``` go
-func MaxIPFilter(max int) IPFilter
-```
-MaxIPFilter returns a IPFilter that selects up to max addresses.
-It will split the results evenly between availabe IPv4 and
-IPv6 addresses. If one type of address doesn't exist in
-sufficient quantity to consume its share, the other type
-will be allowed to fill any extra space in the result.
-Addresses toward the front of the collection are preferred.
-
-
 
 
 ## type Resolver
 ``` go
 type Resolver interface {
-    // Resolve returns a slice of host's IPv4 and IPv6 addresses.
-    Resolve(domain string) ([]net.IP, error)
+    // Resolve looks up the given host and returns its IP addresses.
+    Resolve(host string) ([]net.IP, error)
 }
 ```
 Resolver is an interface representing the ability to lookup the
@@ -327,6 +233,9 @@ A Resolver must be safe for concurrent use by multiple goroutines.
 var DefaultResolver Resolver = defaultResolver{}
 ```
 DefaultResolver is the default Resolver.
+
+
+
 
 
 

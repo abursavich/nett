@@ -54,7 +54,7 @@ type Dialer struct {
 	// With any other type of connection, only the first address
 	// returned will be dialed.
 	//
-	// If nil, DefaultIPFilter is used.
+	// If nil, DefaultIP is used.
 	IPFilter IPFilter
 
 	// KeepAlive specifies the keep-alive period for an active
@@ -112,7 +112,7 @@ func (d *Dialer) Dial(network, address string) (net.Conn, error) {
 	deadline := d.deadline()
 	filter := d.IPFilter
 	if filter == nil {
-		filter = DefaultIPFilter
+		filter = DefaultIP
 	}
 	addrs, err := resolveAddrsDeadline(d.Resolver, filter, network, address, deadline)
 	if err != nil {
@@ -195,10 +195,9 @@ func dialMulti(dialer net.Dialer, network string, addrs addrList) (net.Conn, err
 	return nil, lastErr
 }
 
-// DefaultIPFilter selects the first IPv4 address in ips.
-// If only IPv6 addresses exist in ips, then it selects
-// the first IPv6 address.
-func DefaultIPFilter(ips []net.IP) []net.IP {
+// DefaultIP selects the first address in ips,
+// preferring IPv4 addresses over IPv6 addresses.
+func DefaultIP(ips []net.IP) []net.IP {
 	if len(ips) <= 1 {
 		return ips
 	}
@@ -216,11 +215,10 @@ func DefaultIPFilter(ips []net.IP) []net.IP {
 	return []net.IP{ipv6}
 }
 
-// DualStackIPFilter selects the first IPv4 address
+// DualStack selects the first IPv4 address
 // and IPv6 address in ips.
-func DualStackIPFilter(ips []net.IP) []net.IP {
-	k := len(ips)
-	if k <= 1 {
+func DualStack(ips []net.IP) []net.IP {
+	if len(ips) <= 1 {
 		return ips
 	}
 	var (
@@ -240,55 +238,6 @@ func DualStackIPFilter(ips []net.IP) []net.IP {
 		}
 	}
 	return a
-}
-
-// NoIPFilter selects all IP addresses.
-func NoIPFilter(ips []net.IP) []net.IP {
-	return ips
-}
-
-// MaxIPFilter returns a IPFilter that selects up to max addresses.
-// It will split the results evenly between availabe IPv4 and
-// IPv6 addresses. If one type of address doesn't exist in
-// sufficient quantity to consume its share, the other type
-// will be allowed to fill any extra space in the result.
-// Addresses toward the front of the collection are preferred.
-func MaxIPFilter(max int) IPFilter {
-	return func(ips []net.IP) []net.IP {
-		if len(ips) <= max {
-			return ips
-		}
-		var ipv4, ipv6 int
-		for _, ip := range ips {
-			if ipLen := len(ip); ipLen == net.IPv4len {
-				ipv4++
-			} else if ipLen == net.IPv6len {
-				ipv6++
-			}
-		}
-		if halfLen := max / 2; ipv6 <= halfLen {
-			ipv4 = max - ipv6
-		} else if ipv4 <= halfLen {
-			ipv6 = max - ipv4
-		} else {
-			ipv4 = max - halfLen // give rounding benefit to ipv4
-			ipv6 = halfLen
-		}
-		var a []net.IP
-		for _, ip := range ips {
-			if ipLen := len(ip); ipv4 > 0 && ipLen == net.IPv4len {
-				a = append(a, ip)
-				ipv4--
-			} else if ipv6 > 0 && ipLen == net.IPv6len {
-				a = append(a, ip)
-				ipv6--
-			}
-			if ipv4 == 0 && ipv6 == 0 {
-				break
-			}
-		}
-		return a
-	}
 }
 
 type addrList interface {

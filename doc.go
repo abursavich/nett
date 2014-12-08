@@ -3,11 +3,5 @@
 // license that can be found in the LICENSE file.
 
 // Package nett steals from the standard library's net package
-// and attempts to provide additional useful features. The primary
-// motivation was to provide a dialer with a pluggable host resolver.
-//
-// EXPERIMENTAL
-//
-// There are no plans to break the API, but it should be considered unstable
-// for the time being.
+// and provides a dialer with a pluggable host resolver.
 package nett

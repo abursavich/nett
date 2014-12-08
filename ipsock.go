@@ -28,9 +28,9 @@ func init() {
 	supportsIPv6, supportsIPv4map = probeIPv6Stack()
 }
 
-// SupportedIP returns a version of the IP that the platform
+// supportedIP returns a version of the IP that the platform
 // supports. If it is not supported it returns nil.
-func SupportedIP(ip net.IP) net.IP {
+func supportedIP(ip net.IP) net.IP {
 	if supportsIPv4 {
 		if v4 := ip.To4(); v4 != nil {
 			return v4

@@ -6,13 +6,11 @@ package nett
 
 import (
 	"bytes"
-	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 )
 
 func TestDialHTTP(t *testing.T) {
@@ -67,7 +65,7 @@ func TestDialMulti(t *testing.T) {
 		t.Fatalf("dualStackServer.buildup failed: %v", err)
 	}
 
-	d := &Dialer{IPFilter: NoIPFilter} // dial all addresses
+	d := &Dialer{IPFilter: DualStack} // dial all addresses
 	for _ = range dss.lns {
 		if c, err := d.Dial("tcp", "localhost:"+dss.port); err != nil {
 			t.Errorf("Dial failed: %v", err)
@@ -79,39 +77,5 @@ func TestDialMulti(t *testing.T) {
 			}
 			c.Close()
 		}
-	}
-}
-
-func Example() {
-	dialer := &Dialer{
-		// Cache successful DNS lookups for five minutes
-		// using DefaultResolver to fill the cache.
-		Resolver: NewCacheResolver(nil, 5*time.Minute),
-		// If host resolves to multiple IP addresses,
-		// dial two concurrently splitting between
-		// IPv4 and IPv6 addresses and return the
-		// connection that is established first.
-		IPFilter: MaxIPFilter(2),
-		// Give up after 5 seconds including DNS resolution.
-		Timeout: 5 * time.Second,
-	}
-	client := &http.Client{
-		Transport: &http.Transport{
-			// Use the Dialer.
-			Dial: dialer.Dial,
-		},
-	}
-	urls := []string{
-		"https://www.google.com/search?q=golang",
-		"https://www.google.com/search?q=godoc",
-		"https://www.google.com/search?q=golang-nuts",
-	}
-	for _, url := range urls {
-		resp, err := client.Get(url)
-		if err != nil {
-			panic(err)
-		}
-		io.Copy(ioutil.Discard, resp.Body)
-		resp.Body.Close()
 	}
 }

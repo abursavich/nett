@@ -64,10 +64,10 @@ func TestResolveTCP(t *testing.T) {
 		ips = ta.ips
 		supportsIPv4 = ta.ipv4
 		supportsIPv6 = ta.ipv6
-		addrs, err := ResolveTCPAddrs(nil, nil, ta.net, ta.addr)
+		addrs, err := resolveAddrList(nil, nil, ta.net, ta.addr)
 		if err != ta.err {
 			t.Errorf("test %d: expecting error: %v\ngot: error: %v\n", i, ta.err, err)
-		} else if err == nil && len(addrs) == 0 {
+		} else if err == nil && addrs.Len() == 0 {
 			t.Errorf("test %d: net: %s; addr: %s\nno addresses\n", i, ta.net, ta.addr)
 		}
 	}
@@ -89,10 +89,10 @@ func TestResolveUDP(t *testing.T) {
 		ips = ta.ips
 		supportsIPv4 = ta.ipv4
 		supportsIPv6 = ta.ipv6
-		addrs, err := ResolveUDPAddrs(nil, nil, ta.net, ta.addr)
+		addrs, err := resolveAddrList(nil, nil, ta.net, ta.addr)
 		if err != ta.err {
 			t.Errorf("test: %#v\nexpecting error: %v\ngot error: %v\n", ta, ta.err, err)
-		} else if err == nil && len(addrs) == 0 {
+		} else if err == nil && addrs.Len() == 0 {
 			t.Errorf("test: %#v\nnet: %s; addr: %s\nno addresses\n", ta, ta.net, ta.addr)
 		}
 	}
@@ -114,10 +114,10 @@ func TestResolveIP(t *testing.T) {
 		ips = ta.ips
 		supportsIPv4 = ta.ipv4
 		supportsIPv6 = ta.ipv6
-		addrs, err := ResolveIPAddrs(nil, nil, ta.net, ta.addr)
+		addrs, err := resolveAddrList(nil, nil, ta.net, ta.addr)
 		if err != ta.err {
 			t.Errorf("test: %#v\nexpecting error: %v\ngot error: %v\n", ta, ta.err, err)
-		} else if err == nil && len(addrs) == 0 {
+		} else if err == nil && addrs.Len() == 0 {
 			t.Errorf("test: %#v\nnet: %s; addr: %s\nno addresses\n", ta, ta.net, ta.addr)
 		}
 	}
@@ -138,7 +138,7 @@ func TestCacheResolver(t *testing.T) {
 	now := start
 	ttl := time.Second
 	timeNow = func() time.Time { return now }
-	resolver := NewCacheResolver(nil, ttl)
+	resolver := &CacheResolver{TTL: ttl}
 	validate := func(host string, expLookups int) {
 		ips0, err := resolver.Resolve(host)
 		if err != nil {

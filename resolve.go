@@ -27,17 +27,18 @@ var (
 //
 // A Resolver must be safe for concurrent use by multiple goroutines.
 type Resolver interface {
-	// Resolve returns a slice of host's IPv4 and IPv6 addresses.
-	Resolve(domain string) ([]net.IP, error)
+	// Resolve looks up the given host and returns its IP addresses.
+	Resolve(host string) ([]net.IP, error)
 }
 
 // DefaultResolver is the default Resolver.
 var DefaultResolver Resolver = defaultResolver{}
 
+// defaultResolver uses the local resolver.
 type defaultResolver struct{}
 
-// Resolve looks up host using the local resolver.
-// It returns a slice of that host's IPv4 and IPv6 addresses.
+// Resolve looks up the given host using the local resolver.
+// It returns an array of that host's IPv4 and IPv6 addresses.
 func (defaultResolver) Resolve(host string) ([]net.IP, error) {
 	if host == "" {
 		return nil, errMissingHost
@@ -45,7 +46,8 @@ func (defaultResolver) Resolve(host string) ([]net.IP, error) {
 	return lookupIPs(host)
 }
 
-// CacheResolver looks up the IP addresses of a host and caches results.
+// CacheResolver looks up the IP addresses of a host
+// and caches successful results.
 type CacheResolver struct {
 	// Resolver resolves hosts that are not cached.
 	// If Resolver is nil, DefaultResolver will be used.
@@ -63,20 +65,7 @@ type cacheItem struct {
 	ttl time.Time
 }
 
-// NewCacheResolver returns a new CacheResolver with the given
-// resolver and ttl.
-func NewCacheResolver(resolver Resolver, ttl time.Duration) *CacheResolver {
-	return &CacheResolver{
-		Resolver: resolver,
-		TTL:      ttl,
-		cache:    make(map[string]*cacheItem),
-	}
-}
-
-// Resolve looks up the IP addresses of a host in its cache.
-// If not found in its cache, the CacheResolver's Resolver is
-// used to look up the hosts IPs. Successful results are added
-// to the cache.
+// Resolve returns a host's IP addresses.
 func (r *CacheResolver) Resolve(host string) ([]net.IP, error) {
 	r.mu.RLock()
 	if item, ok := r.cache[host]; ok {
@@ -113,77 +102,6 @@ func (r *CacheResolver) Resolve(host string) ([]net.IP, error) {
 	ips = make([]net.IP, len(item.ips))
 	copy(ips, item.ips)
 	return ips, err
-}
-
-// ResolveTCPAddrs parses address of the form "host:port" or
-// "[ipv6-host%zone]:port" and resolves a list of TCP addresses on the
-// network, which must be "tcp", "tcp4" or "tcp6". A literal address or
-// host name for IPv6 must be enclosed in square brackets, as in "[::1]:80",
-// "[ipv6-host]:http" or "[ipv6-host%zone]:80".
-//
-// If host is a domain name, resolver is used to resolve a list of platform
-// supported IP addresses. If resolver is nil, DefaultResolver is used.
-//
-// If filter is non-nil, resolved IP addresses are selected by applying it.
-func ResolveTCPAddrs(resolver Resolver, filter IPFilter, network, address string) ([]*net.TCPAddr, error) {
-	switch network {
-	case "tcp", "tcp4", "tcp6":
-	default:
-		return nil, net.UnknownNetworkError(network)
-	}
-	addrs, err := resolveInternetAddrList(resolver, filter, network, address)
-	if err != nil {
-		return nil, err
-	}
-	return addrs.(tcpList), nil
-}
-
-// ResolveUDPAddrs parses address of the form "host:port" or
-// "[ipv6-host%zone]:port" and resolves a list of UDP addresses on the
-// network, which must be "udp", "udp4" or "udp6". A literal address or
-// host name for IPv6 must be enclosed in square brackets, as in "[::1]:80",
-// "[ipv6-host]:http" or "[ipv6-host%zone]:80".
-//
-// If host is a domain name, resolver is used to resolve a list of platform
-// supported IP addresses. If resolver is nil, DefaultResolver is used.
-//
-// If filter is non-nil, resolved IP addresses are selected by applying it.
-func ResolveUDPAddrs(resolver Resolver, filter IPFilter, network, address string) ([]*net.UDPAddr, error) {
-	switch network {
-	case "udp", "udp4", "udp6":
-	default:
-		return nil, net.UnknownNetworkError(network)
-	}
-	addrs, err := resolveInternetAddrList(resolver, filter, network, address)
-	if err != nil {
-		return nil, err
-	}
-	return addrs.(udpList), nil
-}
-
-// ResolveIPAddrs parses address of the form "host" or "ipv6-host%zone" and
-// resolves a list of IP addresses on the network, which must be "ip", "ip4"
-// or "ip6".
-//
-// If host is a domain name, resolver is used to resolve a list of platform
-// supported IP addresses. If resolver is nil, DefaultResolver is used.
-//
-// If filter is non-nil, resolved IP addresses are selected by applying it.
-func ResolveIPAddrs(resolver Resolver, filter IPFilter, network, address string) ([]*net.IPAddr, error) {
-	nett, err := parseNetwork(network)
-	if err != nil {
-		return nil, err
-	}
-	switch nett {
-	case "ip", "ip4", "ip6":
-	default:
-		return nil, net.UnknownNetworkError(network)
-	}
-	addrs, err := resolveInternetAddrList(resolver, filter, network, address)
-	if err != nil {
-		return nil, err
-	}
-	return addrs.(ipList), nil
 }
 
 func resolveAddrList(resolver Resolver, filter IPFilter, network, address string) (addrList, error) {
@@ -254,7 +172,7 @@ func resolveInternetAddrList(resolver Resolver, filter IPFilter, network, addres
 			return nil, err
 		}
 	}
-	supported := SupportedIP
+	supported := supportedIP
 	if network[len(network)-1] == '4' {
 		supported = ipv4only
 	} else if network[len(network)-1] == '6' || zone != "" {
