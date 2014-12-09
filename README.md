@@ -41,14 +41,6 @@ for _, url := range urls {
 
 
 
-## func DefaultIP
-``` go
-func DefaultIP(ips []net.IP) []net.IP
-```
-DefaultIP selects the first address in ips,
-preferring IPv4 addresses over IPv6 addresses.
-
-
 ## func DualStack
 ``` go
 func DualStack(ips []net.IP) []net.IP
@@ -107,6 +99,7 @@ type Dialer struct {
 
     // Deadline is the absolute point in time after which dials
     // will fail. If Timeout is set, it may fail earlier.
+    //
     // Zero means no deadline, or dependent on the operating system
     // as with the Timeout option.
     Deadline time.Time
@@ -132,7 +125,7 @@ type Dialer struct {
     // With any other type of connection, only the first address
     // returned will be dialed.
     //
-    // If nil, DefaultIP is used.
+    // If nil, a single address is selected.
     IPFilter IPFilter
 
     // KeepAlive specifies the keep-alive period for an active

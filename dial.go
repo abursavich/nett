@@ -29,6 +29,7 @@ type Dialer struct {
 
 	// Deadline is the absolute point in time after which dials
 	// will fail. If Timeout is set, it may fail earlier.
+	//
 	// Zero means no deadline, or dependent on the operating system
 	// as with the Timeout option.
 	Deadline time.Time
@@ -54,7 +55,7 @@ type Dialer struct {
 	// With any other type of connection, only the first address
 	// returned will be dialed.
 	//
-	// If nil, DefaultIP is used.
+	// If nil, a single address is selected.
 	IPFilter IPFilter
 
 	// KeepAlive specifies the keep-alive period for an active
@@ -112,7 +113,7 @@ func (d *Dialer) Dial(network, address string) (net.Conn, error) {
 	deadline := d.deadline()
 	filter := d.IPFilter
 	if filter == nil {
-		filter = DefaultIP
+		filter = defaultIP
 	}
 	addrs, err := resolveAddrsDeadline(d.Resolver, filter, network, address, deadline)
 	if err != nil {
@@ -195,24 +196,23 @@ func dialMulti(dialer net.Dialer, network string, addrs addrList) (net.Conn, err
 	return nil, lastErr
 }
 
-// DefaultIP selects the first address in ips,
-// preferring IPv4 addresses over IPv6 addresses.
-func DefaultIP(ips []net.IP) []net.IP {
+// defaultIP gives priority to IPv4 addresses and selects the first address.
+func defaultIP(ips []net.IP) []net.IP {
 	if len(ips) <= 1 {
 		return ips
 	}
-	var ipv6 net.IP
-	for _, ip := range ips {
+	v6 := -1
+	for i, ip := range ips {
 		if ipLen := len(ip); ipLen == net.IPv4len {
-			return []net.IP{ip}
-		} else if ipv6 == nil && ipLen == net.IPv6len {
-			ipv6 = ip
+			return ips[i : i+1]
+		} else if v6 == -1 && ipLen == net.IPv6len {
+			v6 = i
 		}
 	}
-	if ipv6 == nil {
+	if v6 == -1 {
 		return nil // shouldn't ever happen
 	}
-	return []net.IP{ipv6}
+	return ips[v6 : v6+1]
 }
 
 // DualStack selects the first IPv4 address
