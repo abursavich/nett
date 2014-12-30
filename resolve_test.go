@@ -29,13 +29,13 @@ func init() {
 		{"tcp", "foo.com:http", ips, true, true, nil},
 		{"tcp", "foo.com:80", ips, true, true, nil},
 		{"tcp4", "foo.com:80", ips, true, false, nil},
-		{"tcp4", "foo.com:80", ips, false, true, errNoSuitableAddress},
+		{"tcp4", "foo.com:80", ips, false, true, ErrNoSuitableAddress},
 		{"tcp6", "foo.com:80", ips, false, true, nil},
-		{"tcp6", "foo.com:80", ips, true, false, errNoSuitableAddress},
+		{"tcp6", "foo.com:80", ips, true, false, ErrNoSuitableAddress},
 		{"tcp", "127.0.0.1:80", nil, true, true, nil},
-		{"tcp6", "127.0.0.1:80", nil, false, true, errNoSuitableAddress},
+		{"tcp6", "127.0.0.1:80", nil, false, true, ErrNoSuitableAddress},
 		{"tcp", "[::1%911]:80", nil, false, true, nil},
-		{"tcp", "[::1%911]:80", nil, true, false, errNoSuitableAddress},
+		{"tcp", "[::1%911]:80", nil, true, false, ErrNoSuitableAddress},
 	}
 	testUDPAddrs = make([]testAddr, len(testTCPAddrs))
 	testIPAddrs = make([]testAddr, len(testTCPAddrs))

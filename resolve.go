@@ -12,10 +12,8 @@ import (
 )
 
 var (
-	errInvalidAddress    = errors.New("invalid address")
-	errMissingAddress    = errors.New("missing address")
-	errMissingHost       = errors.New("missing host")
-	errNoSuitableAddress = errors.New("no suitable address found")
+	ErrMissingAddress    = errors.New("missing address")
+	ErrNoSuitableAddress = errors.New("no suitable address found")
 
 	lookupIPs = net.LookupIP // used by tests
 	timeNow   = time.Now     // used by tests
@@ -40,9 +38,6 @@ type defaultResolver struct{}
 // Resolve looks up the given host using the local resolver.
 // It returns an array of that host's IPv4 and IPv6 addresses.
 func (defaultResolver) Resolve(host string) ([]net.IP, error) {
-	if host == "" {
-		return nil, errMissingHost
-	}
 	return lookupIPs(host)
 }
 
@@ -110,7 +105,7 @@ func resolveAddrList(resolver Resolver, filter IPFilter, network, address string
 		return nil, err
 	}
 	if address == "" {
-		return nil, errMissingAddress
+		return nil, ErrMissingAddress
 	}
 	switch nett {
 	case "unix", "unixgram", "unixpacket":
@@ -162,7 +157,7 @@ func resolveInternetAddrList(resolver Resolver, filter IPFilter, network, addres
 		// Try as a DNS name.
 		host, zone = splitHostZone(host)
 		if !isDomainName(host) {
-			return nil, errInvalidAddress
+			return nil, &net.DNSError{Err: "invalid domain name", Name: host}
 		}
 		if resolver == nil {
 			resolver = DefaultResolver
@@ -183,7 +178,7 @@ func resolveInternetAddrList(resolver Resolver, filter IPFilter, network, addres
 		ips = filter(ips)
 	}
 	if len(ips) == 0 {
-		return nil, errNoSuitableAddress
+		return nil, ErrNoSuitableAddress
 	}
 	return ctor(ips...), nil
 }
@@ -216,7 +211,7 @@ func parseNetwork(network string) (string, error) {
 
 func parseHostPort(network, address string) (host string, port int, err error) {
 	if address == "" {
-		err = errMissingAddress
+		err = ErrMissingAddress
 		return
 	}
 	switch network {
