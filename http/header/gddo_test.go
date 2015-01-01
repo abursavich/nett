@@ -4,8 +4,9 @@
 // license that can be found in the LICENSE file or at
 // https://developers.google.com/open-source/licenses/bsd.
 //
-// This file was copied from the github.com/golang/gddo/httputil/header
-// package and minor adjustments were made.
+// This file was originally copied from the
+// github.com/golang/gddo/httputil/header package
+// and some changes were made.
 
 package header
 
