@@ -19,9 +19,17 @@ var octetTypes [256]octetType
 type octetType byte
 
 const (
-	isToken octetType = 1 << iota
-	isSpace
+	octetToken octetType = 1 << iota
+	octetSpace
 )
+
+func isToken(b byte) bool {
+	return octetTypes[b]&octetToken != 0
+}
+
+func isSpace(b byte) bool {
+	return octetTypes[b]&octetSpace != 0
+}
 
 func init() {
 	// OCTET      = <any 8-bit sequence of data>
@@ -46,22 +54,22 @@ func init() {
 		isChar := 0 <= c && c <= 127
 		isSeparator := strings.IndexRune(" \t\"(),/:;<=>?@[]\\{}", rune(c)) >= 0
 		if strings.IndexRune(" \t\r\n", rune(c)) >= 0 {
-			t |= isSpace
+			t |= octetSpace
 		}
 		if isChar && !isCtl && !isSeparator {
-			t |= isToken
+			t |= octetToken
 		}
 		octetTypes[c] = t
 	}
 }
 
 // Copy returns a shallow copy of the header.
-func Copy(header http.Header) http.Header {
-	h := make(http.Header)
-	for k, vs := range header {
-		h[k] = vs
+func Copy(h http.Header) http.Header {
+	c := make(http.Header)
+	for k, vs := range h {
+		c[k] = vs
 	}
-	return h
+	return c
 }
 
 var timeLayouts = []string{"Mon, 02 Jan 2006 15:04:05 GMT", time.RFC850, time.ANSIC}
@@ -69,8 +77,8 @@ var timeLayouts = []string{"Mon, 02 Jan 2006 15:04:05 GMT", time.RFC850, time.AN
 // ParseTime parses the header as time. The zero value is returned if the
 // header is not present or there is an error parsing the
 // header.
-func ParseTime(header http.Header, key string) time.Time {
-	if s := header.Get(key); s != "" {
+func ParseTime(h http.Header, key string) time.Time {
+	if s := h.Get(key); s != "" {
 		for _, layout := range timeLayouts {
 			if t, err := time.Parse(layout, s); err == nil {
 				return t.UTC()
@@ -83,9 +91,9 @@ func ParseTime(header http.Header, key string) time.Time {
 // ParseList parses a comma separated list of values. Commas are ignored in
 // quoted strings. Quoted values are not unescaped or unquoted. Whitespace is
 // trimmed.
-func ParseList(header http.Header, key string) []string {
+func ParseList(h http.Header, key string) []string {
 	var result []string
-	for _, s := range header[http.CanonicalHeaderKey(key)] {
+	for _, s := range h[http.CanonicalHeaderKey(key)] {
 		begin := 0
 		end := 0
 		escape := false
@@ -107,7 +115,7 @@ func ParseList(header http.Header, key string) []string {
 			case b == '"':
 				quote = true
 				end = i + 1
-			case octetTypes[b]&isSpace != 0:
+			case isSpace(b):
 				if begin == end {
 					begin = i + 1
 					end = begin
@@ -132,9 +140,9 @@ func ParseList(header http.Header, key string) []string {
 // ParseValueAndParams parses a comma separated list of values with optional
 // semicolon separated name-value pairs. Content-Type and Content-Disposition
 // headers are in this format.
-func ParseValueAndParams(header http.Header, key string) (value string, params map[string]string) {
+func ParseValueAndParams(h http.Header, key string) (value string, params map[string]string) {
 	params = make(map[string]string)
-	s := header.Get(key)
+	s := h.Get(key)
 	value, s = expectTokenSlash(s)
 	if value == "" {
 		return
@@ -151,7 +159,7 @@ func ParseValueAndParams(header http.Header, key string) (value string, params m
 			return
 		}
 		var pvalue string
-		pvalue, s = expectTokenOrQuoted(s[1:])
+		pvalue, s = expectTokenOrQuoted(s[1:], true)
 		if pvalue == "" {
 			return
 		}
@@ -168,9 +176,9 @@ type AcceptSpec struct {
 }
 
 // ParseAccept parses Accept* headers.
-func ParseAccept(header http.Header, key string) (specs []AcceptSpec) {
+func ParseAccept(h http.Header, key string) (specs []AcceptSpec) {
 loop:
-	for _, s := range header[key] {
+	for _, s := range h[key] {
 		for {
 			var spec AcceptSpec
 			spec.Value, s = expectTokenSlash(s)
@@ -201,34 +209,31 @@ loop:
 }
 
 func skipSpace(s string) (rest string) {
-	i := 0
-	for ; i < len(s); i++ {
-		if octetTypes[s[i]]&isSpace == 0 {
-			break
+	for i := 0; i < len(s); i++ {
+		if !isSpace(s[i]) {
+			return s[i:]
 		}
 	}
-	return s[i:]
+	return ""
 }
 
 func expectToken(s string) (token, rest string) {
-	i := 0
-	for ; i < len(s); i++ {
-		if octetTypes[s[i]]&isToken == 0 {
-			break
+	for i := 0; i < len(s); i++ {
+		if !isToken(s[i]) {
+			return s[:i], s[i:]
 		}
 	}
-	return s[:i], s[i:]
+	return s, ""
 }
 
 func expectTokenSlash(s string) (token, rest string) {
-	i := 0
-	for ; i < len(s); i++ {
+	for i := 0; i < len(s); i++ {
 		b := s[i]
-		if (octetTypes[b]&isToken == 0) && b != '/' {
-			break
+		if !isToken(b) && b != '/' {
+			return s[:i], s[i:]
 		}
 	}
-	return s[:i], s[i:]
+	return s, ""
 }
 
 func expectQuality(s string) (q float64, rest string) {
@@ -261,37 +266,59 @@ func expectQuality(s string) (q float64, rest string) {
 	return q + float64(n)/float64(d), s[i:]
 }
 
-func expectTokenOrQuoted(s string) (value string, rest string) {
-	if !strings.HasPrefix(s, "\"") {
-		return expectToken(s)
+func expectTokenOrQuoted(s string, unquote bool) (value string, rest string) {
+	if strings.HasPrefix(s, "\"") {
+		return expectQuoted(s, unquote)
 	}
-	s = s[1:]
-	for i := 0; i < len(s); i++ {
-		switch s[i] {
-		case '"':
-			return s[:i], s[i+1:]
-		case '\\':
-			p := make([]byte, len(s)-1)
-			j := copy(p, s[:i])
-			escape := true
-			for i = i + i; i < len(s); i++ {
-				b := s[i]
-				switch {
-				case escape:
-					escape = false
-					p[j] = b
-					j += 1
-				case b == '\\':
-					escape = true
-				case b == '"':
-					return string(p[:j]), s[i+1:]
-				default:
-					p[j] = b
-					j += 1
+	return expectToken(s)
+}
+
+func expectQuoted(s string, unquote bool) (value string, rest string) {
+	if !strings.HasPrefix(s, "\"") {
+		return "", s
+	}
+	if unquote {
+		s = s[1:]
+		for i := 0; i < len(s); i++ {
+			switch s[i] {
+			case '"':
+				return s[:i], s[i+1:]
+			case '\\':
+				p := make([]byte, len(s)-1)
+				j := copy(p, s[:i])
+				escape := true
+				for i = i + i; i < len(s); i++ {
+					b := s[i]
+					switch {
+					case escape:
+						escape = false
+						p[j] = b
+						j += 1
+					case b == '\\':
+						escape = true
+					case b == '"':
+						return string(p[:j]), s[i+1:]
+					default:
+						p[j] = b
+						j += 1
+					}
 				}
+				return "", ""
 			}
-			return "", ""
+		}
+		return "", ""
+	}
+	escape := false
+	for i := 1; i < len(s); i++ {
+		b := s[i]
+		switch {
+		case escape:
+			escape = false
+		case b == '\\':
+			escape = true
+		case b == '"':
+			return s[:i+1], s[i+1:]
 		}
 	}
-	return "", ""
+	return s, "" // TODO: what should unclosed quote return?
 }
