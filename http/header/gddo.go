@@ -278,6 +278,7 @@ func expectQuoted(s string, unquote bool) (value string, rest string) {
 		return "", s
 	}
 	if unquote {
+		orig := s
 		s = s[1:]
 		for i := 0; i < len(s); i++ {
 			switch s[i] {
@@ -287,7 +288,7 @@ func expectQuoted(s string, unquote bool) (value string, rest string) {
 				p := make([]byte, len(s)-1)
 				j := copy(p, s[:i])
 				escape := true
-				for i = i + i; i < len(s); i++ {
+				for i = i + 1; i < len(s); i++ {
 					b := s[i]
 					switch {
 					case escape:
@@ -303,10 +304,10 @@ func expectQuoted(s string, unquote bool) (value string, rest string) {
 						j += 1
 					}
 				}
-				return "", ""
+				return "", orig
 			}
 		}
-		return "", ""
+		return "", orig
 	}
 	escape := false
 	for i := 1; i < len(s); i++ {
@@ -320,5 +321,5 @@ func expectQuoted(s string, unquote bool) (value string, rest string) {
 			return s[:i+1], s[i+1:]
 		}
 	}
-	return s, "" // TODO: what should unclosed quote return?
+	return "", s
 }

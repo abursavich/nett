@@ -29,6 +29,28 @@ func TestParsePragma(t *testing.T) {
 	}
 }
 
+func TestParseKVList(t *testing.T) {
+	tests := []struct {
+		str string
+		esc bool
+		exp map[string]string
+	}{
+		{"", false, map[string]string{}},
+		{"foo", false, map[string]string{"foo": ""}},
+		{"foo=bar", false, map[string]string{"foo": "bar"}},
+		{`foo="bar\"baz\"qux", bar=baz`, false, map[string]string{"foo": `"bar\"baz\"qux"`, "bar": "baz"}},
+		{`foo="bar\"baz\"qux", bar=baz`, true, map[string]string{"foo": `bar"baz"qux`, "bar": "baz"}},
+		{"foo=bar, bar=baz", false, map[string]string{"foo": "bar", "bar": "baz"}},
+		{"  foo=bar  ,   bar=baz  ", false, map[string]string{"foo": "bar", "bar": "baz"}},
+	}
+	for _, tt := range tests {
+		h := http.Header{"Foo": {tt.str}}
+		if got := ParseKVList(h, "Foo", tt.esc); !reflect.DeepEqual(tt.exp, got) {
+			t.Errorf("ParseKVList for %q = %q, want %q", tt.str, got, tt.exp)
+		}
+	}
+}
+
 func TestParseCacheControl(t *testing.T) {
 	tests := []struct {
 		str string
