@@ -126,7 +126,7 @@ type Dialer struct {
     // returned will be dialed.
     //
     // If nil, a single address is selected.
-    IPFilter IPFilter
+    IPFilter func(ips []net.IP) []net.IP
 
     // KeepAlive specifies the keep-alive period for an active
     // network connection.
@@ -186,14 +186,6 @@ Examples:
     Dial("ip6:ospf", "::1")
 
 For Unix networks, the address must be a file system path.
-
-
-
-## type IPFilter
-``` go
-type IPFilter func(ips []net.IP) []net.IP
-```
-IPFilter selects IP addresses from ips.
 
 
 

@@ -99,7 +99,10 @@ func (r *CacheResolver) Resolve(host string) ([]net.IP, error) {
 	return ips, err
 }
 
-func resolveAddrList(resolver Resolver, filter IPFilter, network, address string) (addrList, error) {
+// ipFilter selects IP addresses from ips.
+type ipFilter func(ips []net.IP) []net.IP
+
+func resolveAddrList(resolver Resolver, filter ipFilter, network, address string) (addrList, error) {
 	nett, err := parseNetwork(network)
 	if err != nil {
 		return nil, err
@@ -114,7 +117,7 @@ func resolveAddrList(resolver Resolver, filter IPFilter, network, address string
 	return resolveInternetAddrList(resolver, filter, nett, address)
 }
 
-func resolveInternetAddrList(resolver Resolver, filter IPFilter, network, address string) (addrList, error) {
+func resolveInternetAddrList(resolver Resolver, filter ipFilter, network, address string) (addrList, error) {
 	host, port, err := parseHostPort(network, address)
 	if err != nil {
 		return nil, err

@@ -11,9 +11,6 @@ import (
 
 var errTimeout = error(&timeoutError{})
 
-// IPFilter selects IP addresses from ips.
-type IPFilter func(ips []net.IP) []net.IP
-
 // A Dialer contains options for connecting to an address.
 type Dialer struct {
 	// Timeout is the maximum amount of time a dial will wait for
@@ -56,7 +53,7 @@ type Dialer struct {
 	// returned will be dialed.
 	//
 	// If nil, a single address is selected.
-	IPFilter IPFilter
+	IPFilter func(ips []net.IP) []net.IP
 
 	// KeepAlive specifies the keep-alive period for an active
 	// network connection.
@@ -126,7 +123,7 @@ func (d *Dialer) Dial(network, address string) (net.Conn, error) {
 	return dialMulti(dialer, network, addrs)
 }
 
-func resolveAddrsDeadline(resolver Resolver, filter IPFilter, network, address string, deadline time.Time) (addrList, error) {
+func resolveAddrsDeadline(resolver Resolver, filter ipFilter, network, address string, deadline time.Time) (addrList, error) {
 	if deadline.IsZero() {
 		return resolveAddrList(resolver, filter, network, address)
 	}
